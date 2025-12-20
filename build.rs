@@ -14,15 +14,19 @@ fn main() {
         // The input header we would like to generate bindings for.
         .header("src/objectbox.h")
         // Some settings
-        .whitelist_function("obx_.*")
-        .whitelist_type("OBX_.*")
-        .whitelist_var("OBX_.*")
+        .allowlist_function("obx_.*")
+        .allowlist_type("OBX_.*")
+        .allowlist_var("OBX_.*")
+        // .allowlist_recursively(false)
         .prepend_enum_name(false)
+        .rustified_enum("OBX_.*")
         .derive_copy(false)
         .derive_debug(false)
         .derive_default(false)
         .rustfmt_bindings(true)
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate_comments(false) // generated comments breaks rust
+        .layout_tests(true)
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.

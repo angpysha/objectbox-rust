@@ -193,3 +193,97 @@ mod tests {
         );
     }
 }
+
+pub type OBXPropertyFlags = ::std::os::raw::c_uint;
+/// 64 bit long property (internally unsigned) representing the ID of the entity.
+/// May be combined with: NON_PRIMITIVE_TYPE, ID_MONOTONIC_SEQUENCE, ID_SELF_ASSIGNABLE.
+pub const OBXPropertyFlags_ID: OBXPropertyFlags = 1;
+
+/// On languages like Java, a non-primitive type is used (aka wrapper types, allowing null)
+pub const OBXPropertyFlags_NON_PRIMITIVE_TYPE: OBXPropertyFlags = 2;
+
+/// Unused yet
+pub const OBXPropertyFlags_NOT_NULL: OBXPropertyFlags = 4;
+
+pub const OBXPropertyFlags_INDEXED: OBXPropertyFlags = 8;
+
+/// Unused yet
+pub const OBXPropertyFlags_RESERVED: OBXPropertyFlags = 16;
+
+/// Unique index
+pub const OBXPropertyFlags_UNIQUE: OBXPropertyFlags = 32;
+
+/// Unused yet: Use a persisted sequence to enforce ID to rise monotonic (no ID reuse)
+pub const OBXPropertyFlags_ID_MONOTONIC_SEQUENCE : OBXPropertyFlags= 64;
+
+/// Allow IDs to be assigned by the developer
+pub const OBXPropertyFlags_ID_SELF_ASSIGNABLE: OBXPropertyFlags = 128;
+
+/// Unused yet
+pub const OBXPropertyFlags_INDEX_PARTIAL_SKIP_NULL: OBXPropertyFlags = 256;
+
+/// Used by References for 1) back-references and 2) to clear references to deleted objects (required for ID reuse)
+pub const OBXPropertyFlags_INDEX_PARTIAL_SKIP_ZERO: OBXPropertyFlags = 512;
+
+/// Virtual properties may not have a dedicated field in their entity class, e.g. target IDs of to-one relations
+pub const OBXPropertyFlags_VIRTUAL: OBXPropertyFlags = 1024;
+
+/// Index uses a 32 bit hash instead of the value
+/// 32 bits is shorter on disk, runs well on 32 bit systems, and should be OK even with a few collisions
+pub const OBXPropertyFlags_INDEX_HASH: OBXPropertyFlags = 2048;
+
+/// Index uses a 64 bit hash instead of the value
+/// recommended mostly for 64 bit machines with values longer >200 bytes; small values are faster with a 32 bit hash
+pub const OBXPropertyFlags_INDEX_HASH64: OBXPropertyFlags = 4096;
+
+/// The actual type of the variable is unsigned (used in combination with numeric OBXPropertyType_*).
+/// While our default are signed ints, queries & indexes need do know signing info.
+/// Note: Don't combine with ID (IDs are always unsigned internally).
+pub const OBXPropertyFlags_UNSIGNED: OBXPropertyFlags = 8192;
+
+/// By defining an ID companion property, a special ID encoding scheme is activated involving this property.
+///
+/// For Time Series IDs, a companion property of type Date or DateNano represents the exact timestamp.
+pub const OBXPropertyFlags_ID_COMPANION: OBXPropertyFlags = 16384;
+
+/// Unique on-conflict strategy: the object being put replaces any existing conflicting object (deletes it).
+pub const OBXPropertyFlags_UNIQUE_ON_CONFLICT_REPLACE: OBXPropertyFlags = 32768;
+
+/// If a date property has this flag (max. one per entity type), the date value specifies the time by which
+/// the object expires, at which point it MAY be removed (deleted), which can be triggered by an API call.
+pub const OBXPropertyFlags_EXPIRATION_TIME: OBXPropertyFlags = 65536;
+
+pub type OBXDebugFlags = ::std::os::raw::c_uint;
+
+pub const OBXDebugFlags_LOG_TRANSACTIONS_READ: OBXDebugFlags = 1;
+pub const OBXDebugFlags_LOG_TRANSACTIONS_WRITE: OBXDebugFlags = 2;
+pub const OBXDebugFlags_LOG_QUERIES : OBXDebugFlags= 4;
+pub const OBXDebugFlags_LOG_QUERY_PARAMETERS: OBXDebugFlags = 8;
+pub const OBXDebugFlags_LOG_ASYNC_QUEUE: OBXDebugFlags = 16;
+pub const OBXDebugFlags_LOG_CACHE_HITS: OBXDebugFlags= 32;
+pub const OBXDebugFlags_LOG_CACHE_ALL: OBXDebugFlags= 64;
+pub const OBXDebugFlags_LOG_TREE: OBXDebugFlags = 128;
+/// For a limited number of error conditions, this will try to print stack traces.
+/// Note: this is Linux-only, experimental, and has several limitations:
+/// The usefulness of these stack traces depends on several factors and might not be helpful at all.
+pub const OBXDebugFlags_LOG_EXCEPTION_STACK_TRACE: OBXDebugFlags = 256;
+/// Run a quick self-test to verify basic threading; somewhat paranoia to check the platform and the library setup.
+pub const OBXDebugFlags_RUN_THREADING_SELF_TEST: OBXDebugFlags = 512;
+
+pub type OBXOrderFlags = ::std::os::raw::c_uint;
+
+pub const OBXOrderFlags_DESCENDING: OBXOrderFlags = 1;
+
+/// Sort upper case letters (e.g. "Z") before lower case letters (e.g. "a").
+/// If not specified, the default is case insensitive for ASCII characters.
+pub const OBXOrderFlags_CASE_SENSITIVE: OBXOrderFlags = 2;
+
+/// For scalars only: change the comparison to unsigned (default is signed).
+pub const OBXOrderFlags_UNSIGNED: OBXOrderFlags = 4;
+
+/// null values will be put last.
+/// If not specified, by default null values will be put first.
+pub const OBXOrderFlags_NULLS_LAST: OBXOrderFlags = 8;
+
+/// null values should be treated equal to zero (scalars only).
+pub const OBXOrderFlags_NULLS_ZERO: OBXOrderFlags = 16;

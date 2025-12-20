@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use crate::c::*;
 use crate::{c, error};
+use crate::error::Error;
 
 pub(crate) struct Tx {
     // pub(crate) error: Option<Error>,
@@ -57,7 +58,7 @@ impl Tx {
     }
 
     // TODO write test
-    pub(crate) fn data_size(&mut self) -> error::Result<(u64, u64)> {
+    pub(crate) fn data_size(&mut self) -> Result<(u64, i64), Error> {
         let mut committed_size = 0;
         let mut size_change = 0;
         c::call(unsafe { obx_txn_data_size(self.obx_txn, &mut committed_size, &mut size_change) })

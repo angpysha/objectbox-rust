@@ -8,11 +8,11 @@ edition = "2021"
 objectbox-macros = { path = "macros" }
 objectbox-generator = { path = "generator" }
 chrono = "0.4"
-flatbuffers = "22.10.26"
+flatbuffers = "25.12.19"
 bytebuffer = "2.0.1"
 anymap = "0.12.1"
 
 [build-dependencies]
-bindgen = "^0.51"
+bindgen = "0.72.1"
 
 # in an imaginary world, ob can be completely rewritten in rust, and safer_ffi can be used to export to other language targets

@@ -98,9 +98,9 @@ impl Opt {
             .map(|_| self)
     }
 
-    pub fn validate_on_open(&self, page_limit: usize, leaf_level: bool) -> &Self {
+    pub fn validate_on_open_pages(&self, page_limit: usize, flags: u32) -> &Self {
         unsafe {
-            obx_opt_validate_on_open(self.obx_opt, page_limit, leaf_level);
+            obx_opt_validate_on_open_pages(self.obx_opt, page_limit, flags);
         }
         self
     }

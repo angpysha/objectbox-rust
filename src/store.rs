@@ -60,6 +60,13 @@ impl Store {
         unsafe { obx_store_is_open(path.as_c_char_ptr()) }
     }
 
+    pub fn attach(path: &Path) -> error::Result<Self> {
+        let obx_store = c::new_mut(unsafe { obx_store_attach(path.as_c_char_ptr()) })?;
+        Ok(Store {
+            obx_store,
+            trait_map: AnyMap::new(),
+        })
+    }
     // TODO support later
     /*
     pub fn from_path_attach(path: &Path) -> Self {

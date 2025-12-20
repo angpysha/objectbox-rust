@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2022 ObjectBox Ltd. All rights reserved.
+ * Copyright 2018-2025 ObjectBox Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,8 +51,8 @@ extern "C" {
 
 /// When using ObjectBox as a dynamic library, you should verify that a compatible version was linked using
 /// obx_version() or obx_version_is_at_least().
-#define OBX_VERSION_MAJOR 0
-#define OBX_VERSION_MINOR 18
+#define OBX_VERSION_MAJOR 4
+#define OBX_VERSION_MINOR 3
 #define OBX_VERSION_PATCH 0  // values >= 100 are reserved for dev releases leading to the next minor/major increase
 
 //----------------------------------------------
@@ -67,15 +67,32 @@ typedef uint64_t obx_uid;
 /// ID of a single Object stored in the database
 typedef uint64_t obx_id;
 
+/// Object ID with its associated query score, which is used for special query results.
+typedef struct OBX_id_score {
+    obx_id id;
+
+    /// The query score indicates some quality measurement.
+    /// E.g. for vector nearest neighbor searches, the score is the distance to the given vector.
+    double score;
+} OBX_id_score;
+
 /// Error/success code returned by an obx_* function; see defines OBX_SUCCESS, OBX_NOT_FOUND, and OBX_ERROR_*
 typedef int obx_err;
 
-/// The callback for reading data one-by-one
+/// The callback for reading data (i.e. object bytes) one-by-one.
 /// @param data is the read data buffer
 /// @param size specifies the length of the read data
 /// @param user_data is a pass-through argument passed to the called API
-/// @return true to keep going, false to cancel.
+/// @return The visitor returns true to keep going or false to cancel.
 typedef bool obx_data_visitor(const void* data, size_t size, void* user_data);
+
+struct OBX_bytes_score;  // Forward declaration for the obx_data_score_visitor typedef
+
+/// The callback for reading data (i.e. object bytes) with a search score one-by-one.
+/// @param data contains the current data with score element
+/// @param user_data is a pass-through argument passed to the called API
+/// @return The visitor returns true to keep going or false to cancel.
+typedef bool obx_data_score_visitor(const struct OBX_bytes_score* data, void* user_data);
 
 //----------------------------------------------
 // Runtime library information
@@ -117,14 +134,48 @@ typedef enum {
     /// Check whether debug log can be enabled during runtime.
     OBXFeature_DebugLog = 4,
 
-    /// Administration interface (HTTP server) with a database browser.
+    /// Admin UI including a database browser, user management, and more.
+    /// Depends on HttpServer (if Admin is available HttpServer is too).
     OBXFeature_Admin = 5,
 
-    /// Tree & GraphQL support
+    /// Tree with special GraphQL support
     OBXFeature_Tree = 6,
 
     /// Sync server availability. Visit https://objectbox.io/sync for more details.
     OBXFeature_SyncServer = 7,
+
+    /// Implicitly added by Sync or SyncServer; disable via NoWebSockets
+    OBXFeature_WebSockets = 8,
+
+    /// Sync Server has cluster functionality.
+    /// Implicitly added by SyncServer; disable via NoCluster
+    OBXFeature_Cluster = 9,
+
+    /// Embedded HTTP server.
+    OBXFeature_HttpServer = 10,
+
+    /// Embedded GraphQL server (via HTTP).
+    /// Depends on HttpServer (if GraphQL is available HttpServer is too).
+    OBXFeature_GraphQL = 11,
+
+    /// Database Backup functionality; typically only enabled in Sync Server builds.
+    OBXFeature_Backup = 12,
+
+    /// The default database "provider"; writes data persistently to disk (ACID).
+    OBXFeature_Lmdb = 13,
+
+    /// Vector search functionality; enables indexing for nearest neighbor search.
+    OBXFeature_VectorSearch = 14,
+
+    /// WAL (write-ahead logging).
+    OBXFeature_Wal = 15,
+
+    /// Sync connector to integrate MongoDB with SyncServer.
+    OBXFeature_SyncMongoDb = 16,
+
+    /// Enables additional authentication/authorization methods for sync login, e.g. JWT based methods.
+    OBXFeature_Auth = 17,
+
 } OBXFeature;
 
 /// Checks whether the given feature is available in the currently loaded library.
@@ -218,6 +269,12 @@ OBX_C_API int obx_thread_number();
 /// A required resource (e.g. a store or some internal queue) is shutting down, and thus, the current request could not
 /// be fulfilled. Typically occurs in asynchronous operations.
 #define OBX_ERROR_SHUTTING_DOWN 10006
+
+/// An I/O operation failed, e.g. a file was not found, could not be written or read.
+#define OBX_ERROR_IO 10007
+
+/// A given backup file has invalid content and thus cannot be restored.
+#define OBX_ERROR_BACKUP_FILE_INVALID 10008
 
 /// An error occurred but error information could not be extracted.
 /// This falls in the "should not happen" category and should be very rare;
@@ -376,23 +433,108 @@ OBX_C_API bool obx_last_error_set(obx_err code, obx_err secondary, const char* m
 //----------------------------------------------
 
 typedef enum {
-    OBXPropertyType_Bool = 1,    ///< 1 byte
-    OBXPropertyType_Byte = 2,    ///< 1 byte
-    OBXPropertyType_Short = 3,   ///< 2 bytes
-    OBXPropertyType_Char = 4,    ///< 1 byte
-    OBXPropertyType_Int = 5,     ///< 4 bytes
-    OBXPropertyType_Long = 6,    ///< 8 bytes
-    OBXPropertyType_Float = 7,   ///< 4 bytes
-    OBXPropertyType_Double = 8,  ///< 8 bytes
-    OBXPropertyType_String = 9,
-    OBXPropertyType_Date = 10,  ///< Unix timestamp (milliseconds since 1970) in 8 bytes
-    OBXPropertyType_Relation = 11,
-    OBXPropertyType_DateNano = 12,  ///< Unix timestamp (nanoseconds since 1970) in 8 bytes
+    OBXPropertyType_Unknown = 0,    ///< Not a actual type; represents an uninitialized or invalid type
+    OBXPropertyType_Bool = 1,       ///< A boolean (flag)
+    OBXPropertyType_Byte = 2,       ///< 8-bit integer
+    OBXPropertyType_Short = 3,      ///< 16-bit integer
+    OBXPropertyType_Char = 4,       ///< 16-bit character
+    OBXPropertyType_Int = 5,        ///< 32-bit integer
+    OBXPropertyType_Long = 6,       ///< 64-bit integer
+    OBXPropertyType_Float = 7,      ///< 32-bit floating point number
+    OBXPropertyType_Double = 8,     ///< 64-bit floating point number
+    OBXPropertyType_String = 9,     ///< UTF-8 encoded string (variable length)
+    OBXPropertyType_Date = 10,      ///< 64-bit (integer) timestamp; milliseconds since 1970-01-01 (unix epoch)
+    OBXPropertyType_Relation = 11,  ///< Relation to another entity
+    OBXPropertyType_DateNano = 12,  ///< High precision 64-bit timestamp; nanoseconds since 1970-01-01 (unix epoch)
     OBXPropertyType_Flex = 13,  ///< Flexible" type, which may contain scalars (integers, floating points), strings or
                                 ///< containers (lists and maps). Note: a flex map must use string keys.
-    OBXPropertyType_ByteVector = 23,
-    OBXPropertyType_StringVector = 30,
+    OBXPropertyType_BoolVector = 22,      ///< Variable sized vector of Bool values (note: each value is one byte)
+    OBXPropertyType_ByteVector = 23,      ///< Variable sized vector of Byte values (8-bit integers)
+    OBXPropertyType_ShortVector = 24,     ///< Variable sized vector of Short values (16-bit integers)
+    OBXPropertyType_CharVector = 25,      ///< Variable sized vector of Char values (16-bit characters)
+    OBXPropertyType_IntVector = 26,       ///< Variable sized vector of Int values (32-bit integers)
+    OBXPropertyType_LongVector = 27,      ///< Variable sized vector of Long values (64-bit integers)
+    OBXPropertyType_FloatVector = 28,     ///< Variable sized vector of Float values (32-bit floating point numbers)
+    OBXPropertyType_DoubleVector = 29,    ///< Variable sized vector of Double values (64-bit floating point numbers)
+    OBXPropertyType_StringVector = 30,    ///< Variable sized vector of String values (UTF-8 encoded strings).
+    OBXPropertyType_DateVector = 31,      ///< Variable sized vector of Date values (64-bit timestamp).
+    OBXPropertyType_DateNanoVector = 32,  ///< Variable sized vector of Date values (high precision 64-bit timestamp).
 } OBXPropertyType;
+
+/// The vector distance algorithm used by an HNSW index (vector search).
+typedef enum {
+    /// Not a real type, just best practice (e.g. forward compatibility)
+    OBXVectorDistanceType_Unknown = 0,
+
+    /// The default; typically "Euclidean squared" internally.
+    OBXVectorDistanceType_Euclidean = 1,
+
+    /// Cosine similarity compares two vectors irrespective of their magnitude (compares the angle of two vectors).
+    /// Often used for document or semantic similarity.
+    /// Value range: 0.0 - 2.0 (0.0: same direction, 1.0: orthogonal, 2.0: opposite direction)
+    OBXVectorDistanceType_Cosine = 2,
+
+    /// For normalized vectors (vector length == 1.0), the dot product is equivalent to the cosine similarity.
+    /// Because of this, the dot product is often preferred as it performs better.
+    /// Value range (normalized vectors): 0.0 - 2.0 (0.0: same direction, 1.0: orthogonal, 2.0: opposite direction)
+    OBXVectorDistanceType_DotProduct = 3,
+
+    // OBXVectorDistanceType_Manhattan = 4,
+    // OBXVectorDistanceType_Hamming = 5,
+
+    /// For geospatial coordinates aka latitude/longitude pairs.
+    /// Note, that the vector dimension must be 2, with the latitude being the first element and longitude the second.
+    /// Internally, this uses haversine distance.
+    OBXVectorDistanceType_Geo = 6,
+
+    /// A custom dot product similarity measure that does not require the vectors to be normalized.
+    /// Note: this is no replacement for cosine similarity (like DotProduct for normalized vectors is).
+    /// The non-linear conversion provides a high precision over the entire float range (for the raw dot product).
+    /// The higher the dot product, the lower the distance is (the nearer the vectors are).
+    /// The more negative the dot product, the higher the distance is (the farther the vectors are).
+    /// Value range: 0.0 - 2.0 (nonlinear; 0.0: nearest, 1.0: orthogonal, 2.0: farthest)
+    OBXVectorDistanceType_DotProductNonNormalized = 10,
+
+} OBXVectorDistanceType;
+
+/// Utility function to calculate the distance of two given vectors.
+/// Note: the memory of the two vectors may not overlap!
+/// @param type The distance type that is to be used for the calculation.
+/// @param dimension The dimension of the vectors (number of elements).
+/// @returns A distance measure that is dependent on the distance type.
+/// @returns NaN on error; e.g. if the distance type is unknown, or the vector search feature is unavailable.
+OBX_C_API float obx_vector_distance_float32(OBXVectorDistanceType type, const float* vector1, const float* vector2,
+                                            size_t dimension);
+
+/// Utility function to convert a vector distance (e.g. scores from query results) to a relevance score.
+/// The relevance score is a value between 0.0 and 1.0, with 1.0 indicating the most relevant.
+/// Note: the higher a distance (score), the lower the relevance score.
+/// Note: while the distance (score) is potentially unbound (e.g. Euclidean and dot product) and dependent on the type,
+///       relevance score always has fixed range (0.0 to 1.0).
+/// @param type The distance type indicates how the given distance score was calculated.
+/// @param distance distance score to convert (0.0 is the nearest; upper bound depends on the distance type).
+/// @returns a relevance score between 0.0 and 1.0 (1.0 is the most relevant).
+/// @returns NaN on error; e.g. if the distance type is unknown, or the vector search feature is unavailable.
+OBX_C_API float obx_vector_distance_to_relevance(OBXVectorDistanceType type, float distance);
+
+/// Bit-flags to influence the behavior of HNSW index (vector search).
+typedef enum {
+    OBXHnswFlags_None = 0,
+
+    /// Enables debug logs.
+    OBXHnswFlags_DebugLogs = 1,
+
+    /// Enables "high volume" debug logs, e.g. individual gets/puts.
+    OBXHnswFlags_DebugLogsDetailed = 2,
+
+    /// Padding for SIMD is enabled by default, which uses more memory but may be faster. This flag turns it off.
+    OBXHnswFlags_VectorCacheSimdPaddingOff = 4,
+
+    /// If the speed of removing nodes becomes a concern in your use case, you can speed it up by setting this flag.
+    /// By default, repairing the graph after node removals creates more connections to improve the graph's quality.
+    /// The extra costs for this are relatively low (e.g. vs. regular indexing), and thus the default is recommended.
+    OBXHnswFlags_ReparationLimitCandidates = 8,
+} OBXHnswFlags;
 
 /// Bit-flags defining the behavior of entities.
 /// Note: Numbers indicate the bit position
@@ -473,6 +615,96 @@ typedef enum {
     OBXPropertyFlags_EXPIRATION_TIME = 65536,
 } OBXPropertyFlags;
 
+/// A property type of an external system (e.g. another database) that has no default mapping to an ObjectBox type.
+/// External property types numeric values start at 100 to avoid overlaps with ObjectBox's PropertyType.
+/// (And if we ever support one of these as a primary type, we could share the numeric value?)
+typedef enum {
+    /// Not a real type: represents uninitialized state and can be used for forward compatibility.
+    OBXExternalPropertyType_Unknown = 0,
+    /// Representing type: ByteVector
+    /// Encoding: 1:1 binary representation, little endian (16 bytes)
+    OBXExternalPropertyType_Int128 = 100,
+    // OBXExternalPropertyType_Reserved1 = 101,
+    /// A UUID (Universally Unique Identifier) as defined by RFC 9562.
+    /// ObjectBox uses the UUIDv7 scheme (timestamp + random) to create new UUIDs.
+    /// UUIDv7 is a good choice for database keys as it's mostly sequential and encodes a timestamp.
+    /// However, if keys are used externally, consider UuidV4 for better privacy by not exposing any time information.
+    /// Representing type: ByteVector
+    /// Encoding: 1:1 binary representation (16 bytes)
+    OBXExternalPropertyType_Uuid = 102,
+    /// IEEE 754 decimal128 type, e.g. supported by MongoDB
+    /// Representing type: ByteVector
+    /// Encoding: 1:1 binary representation (16 bytes)
+    OBXExternalPropertyType_Decimal128 = 103,
+    /// UUID represented as a string of 36 characters, e.g. "019571b4-80e3-7516-a5c1-5f1053d23fff".
+    /// For efficient storage, consider the Uuid type instead, which occupies only 16 bytes (20 bytes less).
+    /// This type may still be a convenient alternative as the string type is widely supported and more human-readable.
+    /// In accordance to standards, new UUIDs generated by ObjectBox use lowercase hexadecimal digits.
+    /// Representing type: String
+    OBXExternalPropertyType_UuidString = 104,
+    /// A UUID (Universally Unique Identifier) as defined by RFC 9562.
+    /// ObjectBox uses the UUIDv4 scheme (completely random) to create new UUIDs.
+    /// Representing type: ByteVector
+    /// Encoding: 1:1 binary representation (16 bytes)
+    OBXExternalPropertyType_UuidV4 = 105,
+    /// Like UuidString, but using the UUIDv4 scheme (completely random) to create new UUID.
+    /// Representing type: String
+    OBXExternalPropertyType_UuidV4String = 106,
+    /// A key/value map; e.g. corresponds to a JSON object or a MongoDB document (although not keeping the key order).
+    /// Unlike the Flex type, this must contain a map value (e.g. not a vector or a scalar).
+    /// Representing type: Flex
+    /// Encoding: Flex
+    OBXExternalPropertyType_FlexMap = 107,
+    /// A vector (aka list or array) of flexible elements; e.g. corresponds to a JSON array or a MongoDB array.
+    /// Unlike the Flex type, this must contain a vector value (e.g. not a map or a scalar).
+    /// Representing type: Flex
+    /// Encoding: Flex
+    OBXExternalPropertyType_FlexVector = 108,
+    /// Placeholder (not yet used) for a JSON document.
+    /// Representing type: String
+    OBXExternalPropertyType_Json = 109,
+    /// Placeholder (not yet used) for a BSON document.
+    /// Representing type: ByteVector
+    OBXExternalPropertyType_Bson = 110,
+    /// JavaScript source code
+    /// Representing type: String
+    OBXExternalPropertyType_JavaScript = 111,
+    /// A JSON string that is converted to a native representation in the external system.
+    /// For example, a JSON object on the ObjectBox side (string) would be converted to an embedded document in MongoDB.
+    /// It depends on the external system what kind of JSON structures is supported.
+    /// For MongoDB, this is very flexible and allows (nested) objects, arrays, primitives, etc.
+    /// Representing type: String
+    OBXExternalPropertyType_JsonToNative = 112,
+    // OBXExternalPropertyType_Reserved6 = 113,
+    // OBXExternalPropertyType_Reserved7 = 114,
+    // OBXExternalPropertyType_Reserved8 = 115,
+    /// A vector (array) of Int128 values
+    OBXExternalPropertyType_Int128Vector = 116,
+    // OBXExternalPropertyType_Reserved9 = 117,
+    /// A vector (array) of Uuid values
+    OBXExternalPropertyType_UuidVector = 118,
+    // OBXExternalPropertyType_Reserved10 = 119,
+    // OBXExternalPropertyType_Reserved11 = 120,
+    // OBXExternalPropertyType_Reserved12 = 121,
+    // OBXExternalPropertyType_Reserved13 = 122,
+    /// The 12-byte ObjectId type in MongoDB
+    /// Representing type: ByteVector
+    /// Encoding: 1:1 binary representation (12 bytes)
+    OBXExternalPropertyType_MongoId = 123,
+    /// A vector (array) of MongoId values
+    OBXExternalPropertyType_MongoIdVector = 124,
+    /// Representing type: Long
+    /// Encoding: Two unsigned 32-bit integers merged into a 64-bit integer.
+    OBXExternalPropertyType_MongoTimestamp = 125,
+    /// Representing type: ByteVector
+    /// Encoding: 3 zero bytes (reserved, functions as padding), fourth byte is the sub-type,
+    /// followed by the binary data.
+    OBXExternalPropertyType_MongoBinary = 126,
+    /// Representing type: string vector with 2 elements (index 0: pattern, index 1: options)
+    /// Encoding: 1:1 string representation
+    OBXExternalPropertyType_MongoRegex = 127,
+} OBXExternalPropertyType;
+
 struct OBX_model;  // doxygen (only) picks up the typedef struct below
 
 /// Model represents a database schema and must be provided when opening the store.
@@ -512,7 +744,16 @@ OBX_C_API const char* obx_model_error_message(OBX_model* model);
 OBX_C_API obx_err obx_model_entity(OBX_model* model, const char* name, obx_schema_id entity_id, obx_uid entity_uid);
 
 /// Refine the definition of the entity declared by the most recent obx_model_entity() call, specifying flags.
-OBX_C_API obx_err obx_model_entity_flags(OBX_model* model, OBXEntityFlags flags);
+/// @param flags See OBXEntityFlags for values (use bitwise OR to combine multiple flags)
+OBX_C_API obx_err obx_model_entity_flags(OBX_model* model, uint32_t flags);
+
+/// Set the highest ever known property id in the entity. Should always be equal to or higher than the
+/// last property id of the previous version of the entity.
+OBX_C_API obx_err obx_model_entity_last_property_id(OBX_model* model, obx_schema_id property_id, obx_uid property_uid);
+
+/// Refine the definition of the entity declared by the most recent obx_model_entity() call: set the external name.
+/// This is an optional name used in an external system, e.g. another database that ObjectBox syncs with.
+OBX_C_API obx_err obx_model_entity_external_name(OBX_model* model, const char* external_name);
 
 /// Starts the definition of a new property for the entity type of the last obx_model_entity() call.
 /// @param name A human readable name for the property. Must be unique within the entity
@@ -523,7 +764,8 @@ OBX_C_API obx_err obx_model_property(OBX_model* model, const char* name, OBXProp
                                      obx_schema_id property_id, obx_uid property_uid);
 
 /// Refine the definition of the property declared by the most recent obx_model_property() call, specifying flags.
-OBX_C_API obx_err obx_model_property_flags(OBX_model* model, OBXPropertyFlags flags);
+/// @param flags See OBXPropertyFlags for values (use bitwise OR to combine multiple flags)
+OBX_C_API obx_err obx_model_property_flags(OBX_model* model, uint32_t flags);
 
 /// Refine the definition of the property declared by the most recent obx_model_property() call, declaring it a
 /// relation.
@@ -538,6 +780,57 @@ OBX_C_API obx_err obx_model_property_relation(OBX_model* model, const char* targ
 /// @param index_uid Used to identify relations between versions of the model. Must be globally unique.
 OBX_C_API obx_err obx_model_property_index_id(OBX_model* model, obx_schema_id index_id, obx_uid index_uid);
 
+/// Refine the definition of the property declared by the most recent obx_model_property() call: set the external name.
+/// This is an optional name used in an external system, e.g. another database that ObjectBox syncs with.
+/// @param index_id Must be unique within this version of the model
+/// @param index_uid Used to identify relations between versions of the model. Must be globally unique.
+OBX_C_API obx_err obx_model_property_external_name(OBX_model* model, const char* external_name);
+
+/// Refine the definition of the property declared by the most recent obx_model_property() call: set the external type.
+/// This is an optional type used in an external system, e.g. another database that ObjectBox syncs with.
+/// Note that the supported mappings from ObjectBox types to external types are limited.
+/// @param index_id Must be unique within this version of the model
+/// @param index_uid Used to identify relations between versions of the model. Must be globally unique.
+OBX_C_API obx_err obx_model_property_external_type(OBX_model* model, OBXExternalPropertyType external_type);
+
+/// Sets the vector dimensionality for the HNSW index of the latest property (must be of a supported vector type).
+/// This a mandatory option for all HNSW indexes.
+/// Note 1: vectors with higher dimensions than this value are also indexed (ignoring the higher elements).
+/// Note 2: vectors with lower dimensions than this value are completely ignored for indexing.
+OBX_C_API obx_err obx_model_property_index_hnsw_dimensions(OBX_model* model, size_t value);
+
+/// Sets the max number of neighbors per node (aka "M") for the HNSW index of the latest property.
+/// Higher number increases the graph connectivity which can lead to better results, but higher resources usage.
+/// If no value is set, a default value taken (currently 30).
+/// Try e.g. 16 for faster but less accurate results, or 64 for more accurate results.
+OBX_C_API obx_err obx_model_property_index_hnsw_neighbors_per_node(OBX_model* model, uint32_t value);
+
+/// Sets the max number of neighbors searched while indexing (aka "efConstruction") for the HNSW index of the latest
+/// property.
+/// If no value is set, a default value taken (currently 100, which can change in future version).
+/// The default value serves as a starting point that can likely be optimized for specific datasets and use cases.
+/// The higher the value, the more accurate the search, but the longer the indexing will take.
+/// If indexing time is not a major concern, a value of at least 200 is recommended to improve search quality.
+OBX_C_API obx_err obx_model_property_index_hnsw_indexing_search_count(OBX_model* model, uint32_t value);
+
+/// Sets flags for the HNSW index of the latest property.
+/// For details see OBXHnswFlags and its individual values.
+/// @param flags See OBXHnswFlags for values (use bitwise OR to combine multiple flags)
+OBX_C_API obx_err obx_model_property_index_hnsw_flags(OBX_model* model, uint32_t flags);
+
+/// Sets the distance type for the HNSW index of the latest property.
+OBX_C_API obx_err obx_model_property_index_hnsw_distance_type(OBX_model* model, OBXVectorDistanceType value);
+
+/// Sets the reparation backlink probability, for the HNSW index of the latest property.
+/// When repairing the graph after a node was removed, this gives the probability of adding backlinks to the repaired
+/// neighbors. The default is 1.0 (aka "always") as this should be worth a bit of extra costs as it improves the graph's
+/// quality.
+OBX_C_API obx_err obx_model_property_index_hnsw_reparation_backlink_probability(OBX_model* model, float value);
+
+/// Sets the vector cache hint size for the HNSW index of the latest property.
+/// This is a non-binding hint of the maximum size of the vector cache in KB (default: 2097152 or 2 GB/GiB).
+OBX_C_API obx_err obx_model_property_index_hnsw_vector_cache_hint_size_kb(OBX_model* model, size_t value);
+
 /// Add a standalone relation between the active entity and the target entity to the model
 /// @param relation_id Must be unique within this version of the model
 /// @param relation_uid Used to identify relations between versions of the model. Must be globally unique.
@@ -545,6 +838,15 @@ OBX_C_API obx_err obx_model_property_index_id(OBX_model* model, obx_schema_id in
 /// @param target_uid The uid of the target entity of the relation
 OBX_C_API obx_err obx_model_relation(OBX_model* model, obx_schema_id relation_id, obx_uid relation_uid,
                                      obx_schema_id target_id, obx_uid target_uid);
+
+/// Augments the previously defined relation with a name
+OBX_C_API obx_err obx_model_relation_name(OBX_model* model, const char* name);
+
+/// Augments the previously defined relation with an external name (used outside of ObjectBox)
+OBX_C_API obx_err obx_model_relation_external_name(OBX_model* model, const char* external_name);
+
+/// Augments the previously defined relation with an external type (used outside of ObjectBox)
+OBX_C_API obx_err obx_model_relation_external_type(OBX_model* model, OBXExternalPropertyType external_type);
 
 /// Set the highest ever known entity id in the model. Should always be equal to or higher than the
 /// last entity id of the previous version of the model
@@ -558,17 +860,14 @@ OBX_C_API void obx_model_last_index_id(OBX_model* model, obx_schema_id index_id,
 /// last relation id of the previous version of the model.
 OBX_C_API void obx_model_last_relation_id(OBX_model* model, obx_schema_id relation_id, obx_uid relation_uid);
 
-/// Set the highest ever known property id in the entity. Should always be equal to or higher than the
-/// last property id of the previous version of the entity.
-OBX_C_API obx_err obx_model_entity_last_property_id(OBX_model* model, obx_schema_id property_id, obx_uid property_uid);
-
 //----------------------------------------------
 // Store
 //----------------------------------------------
 
 struct OBX_store;  // doxygen (only) picks up the typedef struct below
 
-/// \brief A ObjectBox store represents a database storing data in a given directory on a local file system.
+/// \brief A ObjectBox store represents a database storing data in a given directory on a local file system or in-memory
+/// using "memory:" directory prefix.
 ///
 /// Once opened using obx_store_open(), it's an entry point to data access APIs such as box, query, cursor, transaction.
 /// After your work is done, you must close obx_store_close() to safely release all the handles and avoid data loss.
@@ -602,6 +901,20 @@ typedef enum {
     OBXDebugFlags_RUN_THREADING_SELF_TEST = 512,
 } OBXDebugFlags;
 
+/// Flags used to control pages validation options when opening the store.
+typedef enum {
+    OBXValidateOnOpenPagesFlags_None = 0,  ///< No special flags
+
+    /// Enable validation of leaf pages (by default only branch pages are validated)
+    OBXValidateOnOpenPagesFlags_VisitLeafPages = 1,
+} OBXValidateOnOpenPagesFlags;
+
+/// Flags used to control key/value pairs validation options when opening the store.
+/// Note: this enum does not contain any actual values besides "None" yet; it's only used to future proof the API.
+typedef enum {
+    OBXValidateOnOpenKvFlags_None = 0,  ///< No special flags
+} OBXValidateOnOpenKvFlags;
+
 /// Defines a padding mode for putting data bytes.
 /// Depending on how that data is created, this mode may optimize data handling by avoiding copying memory.
 /// Internal background: data buffers used by put operations are required to have a size divisible by 4 for an
@@ -621,17 +934,54 @@ typedef enum {
     OBXPutPaddingMode_PaddingByCaller = 3,
 } OBXPutPaddingMode;
 
-/// Bytes struct is an input/output wrapper typically used for a single object data (represented as FlatBuffers).
+/// Backup flags control how the store creates backup files.
+/// E.g. when you want "deterministic" file content, you can exclude timestamp and salt.
+typedef enum {
+    /// Do not include a timestamp in the backup file (time when the backup file is generated).
+    OBXBackupFlags_ExcludeTimestamp = 0x1,
+
+    /// Do not include a random salt in the backup file.
+    OBXBackupFlags_ExcludeSalt = 0x2,
+} OBXBackupFlags;
+
+/// WAL flags control how the store handles WAL files.
+typedef enum {
+    /// Enable Wal
+    OBXWalFlags_EnableWal = 0x1,
+
+    /// Does not wait for the disk to acknowledge; faster but not ACID compliant (not generally recommended).
+    OBXWalFlags_NoSyncFile = 0x2,
+} OBXWalFlags;
+
+/// This bytes struct is an input/output wrapper used for a single data object (represented as FlatBuffers).
 typedef struct OBX_bytes {
     const void* data;
     size_t size;
 } OBX_bytes;
 
-/// Bytes array struct is an input/output wrapper for multiple FlatBuffers object data representation.
+/// This bytes array struct is an input/output wrapper for multiple data objects (represented as FlatBuffers).
 typedef struct OBX_bytes_array {
     OBX_bytes* bytes;
     size_t count;
 } OBX_bytes_array;
+
+/// This bytes score struct is an input/output wrapper used for a single data object (represented as FlatBuffers)
+/// with its associated query score, which is used for special query results.
+typedef struct OBX_bytes_score {
+    const void* data;
+    size_t size;
+
+    /// The query score indicates some quality measurement.
+    /// E.g. for vector nearest neighbor searches, the score is the distance to the given vector.
+    double score;
+} OBX_bytes_score;
+
+/// This bytes score array struct is an input/output wrapper pointing to multiple OBX_bytes_score instances.
+/// If count is zero, bytes_scores is allowed to be invalid.
+typedef struct OBX_bytes_score_array {
+    OBX_bytes_score* bytes_scores;
+    size_t count;
+} OBX_bytes_score_array;
 
 struct OBX_bytes_lazy;  // doxygen (only) picks up the typedef struct below
 
@@ -653,6 +1003,13 @@ typedef struct OBX_id_array {
     obx_id* ids;
     size_t count;
 } OBX_id_array;
+
+/// ID score array struct is an input/output wrapper for an array of OBX_id_score structs.
+/// If count is zero, bytes_scores is allowed to be invalid.
+typedef struct OBX_id_score_array {
+    OBX_id_score* ids_scores;
+    size_t count;
+} OBX_id_score_array;
 
 /// String array struct is an input/output wrapper for an array of character strings.
 typedef struct OBX_string_array {
@@ -705,6 +1062,7 @@ typedef struct OBX_float_array {
 OBX_C_API OBX_store_options* obx_opt();
 
 /// Set the store directory on the options. The default is "objectbox".
+/// Use prefix "memory:" to open an in-memory database, e.g. "memory:myApp" (see docs for details).
 OBX_C_API obx_err obx_opt_directory(OBX_store_options* opt, const char* dir);
 
 /// Set the maximum db size on the options. The default is 1Gb.
@@ -717,7 +1075,7 @@ OBX_C_API void obx_opt_max_db_size_in_kb(OBX_store_options* opt, uint64_t size_i
 /// Max data and DB sizes can be combined; data size must be below the DB size.
 OBX_C_API void obx_opt_max_data_size_in_kb(OBX_store_options* opt, uint64_t size_in_kb);
 
-/// Set the file mode on the options. The default is 0644 (unix-style)
+/// Set the file mode on the options. The default is 0644 (unix-style).
 OBX_C_API void obx_opt_file_mode(OBX_store_options* opt, unsigned int file_mode);
 
 /// Set the maximum number of readers (related to read transactions) on the given options.
@@ -761,8 +1119,15 @@ OBX_C_API obx_err obx_opt_model_bytes_direct(OBX_store_options* opt, const void*
 /// Note: ObjectBox builds upon ACID storage, which guarantees consistency given that the file system is working
 /// correctly (in particular fsync).
 /// @param page_limit limits the number of checked pages (currently defaults to 0, but will be increased in the future)
-/// @param leaf_level enable for visiting leaf pages (defaults to false)
-OBX_C_API void obx_opt_validate_on_open(OBX_store_options* opt, size_t page_limit, bool leaf_level);
+/// @param flags flags used to influence how the validation checks are performed;
+///        see OBXValidateOnOpenPagesFlags for values (use bitwise OR to combine multiple flags)
+OBX_C_API void obx_opt_validate_on_open_pages(OBX_store_options* opt, size_t page_limit, uint32_t flags);
+
+/// When the DB is opened initially, ObjectBox can do a validation over the key/value pairs to check, for example,
+/// whether they're consistent towards our internal specification.
+/// @param flags flags used to influence how the validation checks are performed;
+///        see OBXValidateOnOpenKvFlags for values (use bitwise OR to combine multiple flags)
+OBX_C_API void obx_opt_validate_on_open_kv(OBX_store_options* opt, uint32_t flags);
 
 /// Don't touch unless you know exactly what you are doing:
 /// Advanced setting typically meant for language bindings (not end users). See OBXPutPaddingMode description.
@@ -856,6 +1221,37 @@ OBX_C_API void obx_opt_async_object_bytes_max_size_to_cache(OBX_store_options* o
 /// Note: this does not replace the default logging, which is much more extensive (at least at this point).
 OBX_C_API void obx_opt_log_callback(OBX_store_options* opt, obx_log_callback* callback, void* user_data);
 
+/// Backup restore flags control how backups are restored to the database.
+typedef enum {
+    /// Overwrite any existing database with the content of the backup file.
+    OBXBackupRestoreFlags_OverwriteExistingData = 1,
+} OBXBackupRestoreFlags;
+
+/// Before opening the database, this options instructs to restore the database content from the given backup file.
+/// Note: backup is a server-only feature.
+/// By default, actually restoring the backup is only performed if no database already exists
+/// (database does not contain data).
+/// @param flags For default behavior pass 0, or adjust defaults using OBXBackupRestoreFlags bit flags,
+///        e.g., to overwrite all existing data in the database.
+OBX_C_API void obx_opt_backup_restore(OBX_store_options* opt, const char* backup_file, uint32_t flags);
+
+/// Enables Write-ahead logging (WAL) if OBXWalFlags_EnableWal is given.
+/// For now this is only supported for in-memory DBs.
+/// @param flags OBXWalFlags_EnableWal with optional other flags (bitwise OR).
+OBX_C_API void obx_opt_wal(OBX_store_options* opt, uint32_t flags);
+
+/// The WAL file gets consolidated when it reached this size limit when opening the database.
+/// This setting is meant for applications that prefer to consolidate on startup,
+/// which may avoid consolidations on commits while the application is running.
+/// The default is 4096 (4 MB).
+OBX_C_API void obx_opt_wal_max_file_size_on_open_in_kb(OBX_store_options* opt, uint64_t size_in_kb);
+
+/// The WAL file gets consolidated when it reaches this size limit after a commit.
+/// As consolidation takes some time, it is a trade-off between accumulating enough data
+/// and the time the consolidation takes (longer with more data).
+/// The default is 16384 (16 MB).
+OBX_C_API void obx_opt_wal_max_file_size_in_kb(OBX_store_options* opt, uint64_t size_in_kb);
+
 /// Gets the option for "directory"; this is either the default, or, the value set by obx_opt_directory().
 /// The returned value must not be modified and is only valid for the lifetime of the options or until the value is
 /// changed.
@@ -885,7 +1281,7 @@ OBX_C_API void obx_opt_free(OBX_store_options* opt);
 /// Opens (creates) a "store", which represents an ObjectBox database instance in a given directory.
 /// The store is an entry point to data access APIs such as box (obx_box_*), query (obx_qb_* and obx_query_*),
 /// and transaction (obx_txn_*).
-/// It's possible open multiple stores in different directories, e.g. at the same time.
+/// It's possible to open multiple stores in different directories, e.g. at the same time.
 /// See also obx_store_close() to close a previously opened store.
 /// Note: the given options are always freed by this function, including when an error occurs.
 /// @param opt required parameter holding the data model (obx_opt_model()) and optional options (see obx_opt_*())
@@ -923,6 +1319,19 @@ OBX_C_API OBX_store* obx_store_attach_or_open(OBX_store_options* opt, bool check
 /// E.g. these IDs can be shared across threads efficiently and can serve a similar purpose as weak pointers do.
 OBX_C_API uint64_t obx_store_id(OBX_store* store);
 
+/// Get the size of the store. For a disk-based store type, this corresponds to the size on disk, and for the
+/// in-memory store type, this is roughly the used memory bytes occupied by the data.
+/// @returns the size in bytes of the database, or 0 if the file does not exist or some error occurred.
+OBX_C_API uint64_t obx_store_size(OBX_store* store);
+
+/// The size in bytes occupied by the database on disk (if any).
+/// @returns 0 if the underlying database is in-memory only, or the size could not be determined.
+OBX_C_API uint64_t obx_store_size_on_disk(OBX_store* store);
+
+/// Gives the store type ID for the given store
+/// @returns One of ::OBXStoreTypeId
+OBX_C_API uint32_t obx_store_type_id(OBX_store* store);
+
 /// Clone a previously opened store; while a store instance is usable from multiple threads, situations may exist
 /// in which cloning a store simplifies the overall lifecycle.
 /// E.g. when a store is used for multiple threads and it may only be fully released once the last thread completes.
@@ -959,8 +1368,14 @@ OBX_C_API bool obx_store_await_async_completion(OBX_store* store);
 /// @returns false if shutting down or an error occurred
 OBX_C_API bool obx_store_await_async_submitted(OBX_store* store);
 
+/// Backs up the store DB to the given backup-file, using the given flags.
+/// Note: backup is a server-only feature.
+/// @param backup_flags 0 for defaults or OBXBackupFlags bit flags
+OBX_C_API obx_err obx_store_back_up_to_file(OBX_store* store, const char* backup_file, uint32_t backup_flags);
+
 /// Configure debug logging
-OBX_C_API obx_err obx_store_debug_flags(OBX_store* store, OBXDebugFlags flags);
+/// @param flags See OBXDebugFlags for values (use bitwise OR to combine multiple flags)
+OBX_C_API obx_err obx_store_debug_flags(OBX_store* store, uint32_t flags);
 
 /// @returns true if the store was opened with a previous commit
 /// @see obx_opt_use_previous_commit()
@@ -977,6 +1392,24 @@ OBX_C_API obx_err obx_store_prepare_to_close(OBX_store* store);
 /// \note This waits for write transactions to finish before returning from this call.
 /// @param store may be NULL
 OBX_C_API obx_err obx_store_close(OBX_store* store);
+
+/// Store type to be registered with obx_store_type_id_register_default().
+typedef enum {
+
+    /// Default store type: persistent data storage (based on LMDB)
+    OBXStoreTypeId_LMDB = 1,
+
+    /// Store type ID for in-memory database (non-persistent)
+    OBXStoreTypeId_InMemory = 2,
+
+    /// Store type ID for in-memory WAL-enabled (persistent)
+    OBXStoreTypeId_InMemoryWal = 3
+
+} OBXStoreTypeId;
+
+/// Registers the default DB type, which is used if no other types matched a path prefix.
+/// @param storeTypeId Must be one of OBXStoreTypeId (for now).
+OBX_C_API int obx_store_type_id_register_default(uint32_t storeTypeId);
 
 //----------------------------------------------
 // Transaction
@@ -1027,7 +1460,7 @@ OBX_C_API obx_err obx_txn_close(OBX_txn* txn);
 /// Only obx_txn_close() is allowed to be called on the transaction after calling this.
 OBX_C_API obx_err obx_txn_abort(OBX_txn* txn);  // Internal note: will make more sense once we introduce obx_txn_reset
 
-OBX_C_API obx_err obx_txn_data_size(OBX_txn* txn, uint64_t* out_committed_size, uint64_t* out_size_change);
+OBX_C_API obx_err obx_txn_data_size(OBX_txn* txn, uint64_t* out_committed_size, int64_t* out_size_change);
 
 //------------------------------------------------------------------
 // Cursor (lower level API, check also the more convenient Box API)
@@ -1149,6 +1582,19 @@ OBX_C_API obx_err obx_cursor_rel_remove(OBX_cursor* cursor, obx_schema_id relati
 
 /// @returns NULL if the operation failed, see functions like obx_last_error_code() to get error details
 OBX_C_API OBX_id_array* obx_cursor_rel_ids(OBX_cursor* cursor, obx_schema_id relation_id, obx_id source_id);
+
+/// Gets the first object ID or zero if there was no object
+OBX_C_API obx_err obx_cursor_seek_first_id(OBX_cursor* cursor, obx_id* out_id);
+
+/// Gets the next object ID or zero if there was no next object
+OBX_C_API obx_err obx_cursor_seek_next_id(OBX_cursor* cursor, obx_id* out_id);
+
+/// Gets the object ID at the current position; ensures being up-to-date by verifying against database.
+/// @param out_id pointer to receive an output. If the cursor is not positioned at an actual object,
+///               it receives one of two special IDs:
+///                0 (OBJECT_ID_BEFORE_START) if the cursor was not yet moved or reached the end (going backwards).
+///                0xFFFFFFFFFFFFFFFF (OBJECT_ID_BEYOND_END) if the cursor reached the end (going forwards).
+OBX_C_API obx_err obx_cursor_current_id(OBX_cursor* cursor, obx_id* out_id);
 
 //----------------------------------------------
 // Time series
@@ -1535,9 +1981,119 @@ OBX_C_API obx_qb_cond obx_qb_contains_string(OBX_query_builder* builder, obx_sch
 OBX_C_API obx_qb_cond obx_qb_contains_element_string(OBX_query_builder* builder, obx_schema_id property_id,
                                                      const char* value, bool case_sensitive);
 
-/// For flex properties that have a map as root value, this looks for matching key/value pair.
+/// @Deprecated use obx_qb_equals_key_value_string instead
 OBX_C_API obx_qb_cond obx_qb_contains_key_value_string(OBX_query_builder* builder, obx_schema_id property_id,
                                                        const char* key, const char* value, bool case_sensitive);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must equal this one.
+/// @param case_sensitive if true, the value's match is case-sensitive, otherwise case-insensitive.
+OBX_C_API obx_qb_cond obx_qb_equals_key_value_string(OBX_query_builder* builder, obx_schema_id property_id,
+                                                     const char* key, const char* value, bool case_sensitive);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must equal this one.
+OBX_C_API obx_qb_cond obx_qb_equals_key_value_int(OBX_query_builder* builder, obx_schema_id property_id,
+                                                  const char* key, int64_t value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must equal this one.
+OBX_C_API obx_qb_cond obx_qb_equals_key_value_double(OBX_query_builder* builder, obx_schema_id property_id,
+                                                     const char* key, double value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being greater than the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be greater than this one.
+/// @param case_sensitive if true, the value's match is case-sensitive, otherwise case-insensitive.
+OBX_C_API obx_qb_cond obx_qb_greater_key_value_string(OBX_query_builder* builder, obx_schema_id property_id,
+                                                      const char* key, const char* value, bool case_sensitive);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being greater than the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be greater than this one.
+OBX_C_API obx_qb_cond obx_qb_greater_key_value_int(OBX_query_builder* builder, obx_schema_id property_id,
+                                                   const char* key, int64_t value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being greater than the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be greater than this one.
+OBX_C_API obx_qb_cond obx_qb_greater_key_value_double(OBX_query_builder* builder, obx_schema_id property_id,
+                                                      const char* key, double value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being greater than or equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be greater than or equal to this one.
+/// @param case_sensitive if true, the value's match is case-sensitive, otherwise case-insensitive.
+OBX_C_API obx_qb_cond obx_qb_greater_or_equal_key_value_string(OBX_query_builder* builder, obx_schema_id property_id,
+                                                               const char* key, const char* value, bool case_sensitive);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being greater than or equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be greater than or equal to this one.
+OBX_C_API obx_qb_cond obx_qb_greater_or_equal_key_value_int(OBX_query_builder* builder, obx_schema_id property_id,
+                                                            const char* key, int64_t value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being greater than or equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be greater than or equal to this one.
+OBX_C_API obx_qb_cond obx_qb_greater_or_equal_key_value_double(OBX_query_builder* builder, obx_schema_id property_id,
+                                                               const char* key, double value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being lesser than the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be lesser than this one.
+/// @param case_sensitive if true, the value's match is case-sensitive, otherwise case-insensitive.
+OBX_C_API obx_qb_cond obx_qb_less_than_key_value_string(OBX_query_builder* builder, obx_schema_id property_id,
+                                                        const char* key, const char* value, bool case_sensitive);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being lesser than the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be lesser than this one.
+OBX_C_API obx_qb_cond obx_qb_less_than_key_value_int(OBX_query_builder* builder, obx_schema_id property_id,
+                                                     const char* key, int64_t value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being lesser than the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be lesser than this one.
+OBX_C_API obx_qb_cond obx_qb_less_than_key_value_double(OBX_query_builder* builder, obx_schema_id property_id,
+                                                        const char* key, double value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being lesser than or equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be lesser than or equal to this one.
+/// @param case_sensitive if true, the value's match is case-sensitive, otherwise case-insensitive.
+OBX_C_API obx_qb_cond obx_qb_less_or_equal_key_value_string(OBX_query_builder* builder, obx_schema_id property_id,
+                                                            const char* key, const char* value, bool case_sensitive);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being lesser than or equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be lesser than or equal to this one.
+OBX_C_API obx_qb_cond obx_qb_less_or_equal_key_value_int(OBX_query_builder* builder, obx_schema_id property_id,
+                                                         const char* key, int64_t value);
+
+/// For flex properties that have a map as root value, this looks for a matching key/value pair,
+/// with the map value being lesser than or equal to the given one.
+/// @param key must be an exact match exactly (case-sensitive)
+/// @param value the map's value must be lesser than or equal to this one.
+OBX_C_API obx_qb_cond obx_qb_less_or_equal_key_value_double(OBX_query_builder* builder, obx_schema_id property_id,
+                                                            const char* key, double value);
 
 OBX_C_API obx_qb_cond obx_qb_starts_with_string(OBX_query_builder* builder, obx_schema_id property_id,
                                                 const char* value, bool case_sensitive);
@@ -1632,7 +2188,7 @@ OBX_C_API obx_qb_cond obx_qb_less_or_equal_bytes(OBX_query_builder* builder, obx
 /// @param relation_count Number of related object an object must have to match. May be 0 if objects shall be matched
 ///        that do not have related objects. (Typically low numbers are used for the count.)
 OBX_C_API obx_qb_cond obx_qb_relation_count_property(OBX_query_builder* builder, obx_schema_id relation_entity_id,
-                                                     obx_schema_id relation_property_id, int32_t relation_count);
+                                                     obx_schema_id relation_property_id, uint32_t relation_count);
 
 // Other condition related functions ---------------------
 
@@ -1665,7 +2221,7 @@ OBX_C_API obx_qb_cond obx_qb_any(OBX_query_builder* builder, const obx_qb_cond c
 OBX_C_API obx_err obx_qb_param_alias(OBX_query_builder* builder, const char* alias);
 
 /// Configures an order of results in the query
-OBX_C_API obx_err obx_qb_order(OBX_query_builder* builder, obx_schema_id property_id, OBXOrderFlags flags);
+OBX_C_API obx_err obx_qb_order(OBX_query_builder* builder, obx_schema_id property_id, uint32_t flags);
 
 /// Create a link based on a property-relation (many-to-one)
 OBX_C_API OBX_query_builder* obx_qb_link_property(OBX_query_builder* builder, obx_schema_id property_id);
@@ -1691,6 +2247,18 @@ OBX_C_API OBX_query_builder* obx_qb_backlink_standalone(OBX_query_builder* build
 ///        Must be a date type (e.g. PropertyType_Date or PropertyType_DateNano).
 OBX_C_API OBX_query_builder* obx_qb_link_time(OBX_query_builder* builder, obx_schema_id linked_entity_id,
                                               obx_schema_id begin_property_id, obx_schema_id end_property_id);
+
+/// Performs an approximate nearest neighbor (ANN) search to find objects near to the given query_vector.
+/// This requires the vector property to have a HNSW index.
+/// @param vector_property_id the vector property ID of the entity
+/// @param query_vector the query vector; its dimensions should be at least the dimensions of the vector property.
+/// @param max_result_count maximum number of objects to return by the ANN condition.
+///        Hint: it can also be used as the "ef" HNSW parameter to increase the search quality in combination with a
+///        query limit.
+///        For example, use 100 here with a query limit of 10 to have 10 results that are of potentially better quality
+///        than just passing in 10 here (quality/performance tradeoff).
+OBX_C_API obx_qb_cond obx_qb_nearest_neighbors_f32(OBX_query_builder* builder, obx_schema_id vector_property_id,
+                                                   const float* query_vector, size_t max_result_count);
 
 //----------------------------------------------
 // Query
@@ -1729,8 +2297,23 @@ OBX_C_API obx_err obx_query_offset_limit(OBX_query* query, size_t offset, size_t
 /// Call with limit=0 to reset to the default behavior - zero limit means no limit applied.
 OBX_C_API obx_err obx_query_limit(OBX_query* query, size_t limit);
 
-/// Find entities matching the query. NOTE: the returned data is only valid as long the transaction is active!
+/// Find objects matching the query.
+/// NOTE: You must use an explicit transaction and the returned data is only valid as long the transaction is active!
+/// Note: if no order conditions is present, the order is arbitrary (sometimes ordered by ID, but never guaranteed to).
 OBX_C_API OBX_bytes_array* obx_query_find(OBX_query* query);
+
+/// Find objects matching the query associated to their query score (e.g. distance in NN search).
+/// The resulting array is sorted by score in ascending order (unlike obx_query_find()).
+OBX_C_API OBX_bytes_score_array* obx_query_find_with_scores(OBX_query* query);
+
+/// Find object IDs matching the query associated to their query score (e.g. distance in NN search).
+/// The resulting array is sorted by score in ascending order (unlike obx_query_find_ids()).
+OBX_C_API OBX_id_score_array* obx_query_find_ids_with_scores(OBX_query* query);
+
+/// Find object IDs matching the query ordered by their query score (e.g. distance in NN search).
+/// The resulting array is sorted by score in ascending order (unlike obx_query_find_ids()).
+/// Unlike obx_query_find_ids_with_scores(), this method returns a simple array of IDs without scores.
+OBX_C_API OBX_id_array* obx_query_find_ids_by_score(OBX_query* query);
 
 /// Find the first object matching the query.
 /// @returns OBX_NOT_FOUND if no object matches.
@@ -1748,10 +2331,16 @@ OBX_C_API obx_err obx_query_find_first(OBX_query* query, const void** data, size
 ///            operation (e.g. put/remove) was executed. Accessing data after this is undefined behavior.
 OBX_C_API obx_err obx_query_find_unique(OBX_query* query, const void** data, size_t* size);
 
-/// Walk over matching objects using the given data visitor
+/// Walk over matching objects one-by-one using the given data visitor (a callback function).
+/// Note: if no order conditions is present, the order is arbitrary (sometimes ordered by ID, but never guaranteed to).
 OBX_C_API obx_err obx_query_visit(OBX_query* query, obx_data_visitor* visitor, void* user_data);
 
-/// Return the IDs of all matching objects
+/// Walk over matching objects with their query score one-by-one using the given data visitor (a callback function).
+/// Note: the elements are ordered by the score (ascending).
+OBX_C_API obx_err obx_query_visit_with_score(OBX_query* query, obx_data_score_visitor* visitor, void* user_data);
+
+/// Return the IDs of all matching objects.
+/// Note: if no order conditions is present, the order is arbitrary (sometimes ordered by ID, but never guaranteed to).
 OBX_C_API OBX_id_array* obx_query_find_ids(OBX_query* query);
 
 /// Return the number of matching objects
@@ -1807,6 +2396,8 @@ OBX_C_API obx_err obx_query_param_2doubles(OBX_query* query, obx_schema_id entit
                                            double value_a, double value_b);
 OBX_C_API obx_err obx_query_param_bytes(OBX_query* query, obx_schema_id entity_id, obx_schema_id property_id,
                                         const void* value, size_t size);
+OBX_C_API obx_err obx_query_param_vector_float32(OBX_query* query, obx_schema_id entity_id, obx_schema_id property_id,
+                                                 const float* value, size_t element_count);
 
 /// Gets the size of the property type used in a query condition.
 /// A typical use case of this is to allow language bindings (e.g. Swift) use the right type (e.g. 32 bit ints) even
@@ -1831,6 +2422,8 @@ OBX_C_API obx_err obx_query_param_alias_int32s(OBX_query* query, const char* ali
 OBX_C_API obx_err obx_query_param_alias_double(OBX_query* query, const char* alias, double value);
 OBX_C_API obx_err obx_query_param_alias_2doubles(OBX_query* query, const char* alias, double value_a, double value_b);
 OBX_C_API obx_err obx_query_param_alias_bytes(OBX_query* query, const char* alias, const void* value, size_t size);
+OBX_C_API obx_err obx_query_param_alias_vector_float32(OBX_query* query, const char* alias, const float* value,
+                                                       size_t element_count);
 
 /// Gets the size of the property type used in a query condition.
 /// A typical use case of this is to allow language bindings (e.g. Swift) use the right type (e.g. 32 bit ints) even
@@ -2122,6 +2715,11 @@ OBX_C_API obx_err obx_tree_cursor_txn(OBX_tree_cursor* cursor, OBX_txn* txn);
 OBX_C_API obx_err obx_tree_cursor_get_raw(OBX_tree_cursor* cursor, const char* path, const void** data, size_t* size,
                                           const void** metadata, size_t* metadata_size);
 
+/// Gets the full path (from the root) of the given leaf ID.
+/// @returns If successful, an allocated path is returned (malloc), which must be free()-ed by the caller.
+/// @returns If not successful, NULL is returned.
+OBX_C_API const char* obx_tree_cursor_get_leaf_path(OBX_tree_cursor* cursor, obx_id leaf_id);
+
 /// \brief A "low-level" put operation for a tree leaf using given raw FlatBuffer bytes.
 /// Any non-existing branches and meta nodes are put on the fly if an optional meta-leaf FlatBuffers is given.
 /// A typical usage pattern is to first try without the meta-leaf, and if it does not work, create the meta-leaf and
@@ -2146,6 +2744,58 @@ OBX_C_API obx_err obx_tree_cursor_put_raw(OBX_tree_cursor* cursor, const char* p
 /// Explicitly consolidates tree node conflicts (non unique nodes sharing a common path).
 /// See also obx_tree_async_consolidate_node_conflicts() for an asynchronous version.
 OBX_C_API obx_err obx_tree_cursor_consolidate_node_conflicts(OBX_tree_cursor* cursor, size_t* out_consolidated_count);
+
+struct OBX_tree_leaves_info;  // doxygen (only) picks up the typedef struct below
+
+/// Extended information about leaf nodes.
+typedef struct OBX_tree_leaves_info OBX_tree_leaves_info;
+
+/// \brief Given an existing path, return all existing leaves with their paths.
+/// As this traverses the data tree (i.e. not the meta tree), it will only return nodes that exist (obviously).
+/// Thus, the meta tree may contain additional paths, but these are unused by the data tree (currently at least).
+/// @param path the branch or leaf path to use. Optional: if no path is given (null), the root node is taken.
+/// @returns leaf info ordered by path depth (i.e. starting from paths with the smallest number of branches); paths at
+/// same depth are ordered by id.
+OBX_C_API OBX_tree_leaves_info* obx_tree_cursor_get_child_leaves_info(OBX_tree_cursor* cursor, const char* path);
+
+/// Gets the number of leaves from the given leaves info.
+OBX_C_API size_t obx_tree_leaves_info_size(OBX_tree_leaves_info* leaves_info);
+
+/// Gets the path of a given leaf (by index).
+OBX_C_API const char* obx_tree_leaves_info_path(OBX_tree_leaves_info* leaves_info, size_t index);
+
+/// Gets the property type (as OBXPropertyType) of a given leaf (by index).
+/// @returns OBXPropertyType_Unknown if no property type was found.
+OBX_C_API OBXPropertyType obx_tree_leaves_info_type(OBX_tree_leaves_info* leaves_info, size_t index);
+
+/// Gets the id of a given leaf (by index).
+OBX_C_API obx_id obx_tree_leaves_info_id(OBX_tree_leaves_info* leaves_info, size_t index);
+
+/// Frees a leaves info reference.
+OBX_C_API void obx_tree_leaves_info_free(OBX_tree_leaves_info* leaves_info);
+
+/// Callback for obx_tree_async_get_raw().
+/// \note If the given status is an error, you can use functions like obx_last_error_message() to gather more info
+/// during this callback (error state is thread bound and the callback uses an internal thread).
+/// @param status The result status of the async operation
+/// @param id If the operation was successful, the ID of the leaf, which was get (otherwise zero).
+/// @param path The leafs path as string.
+/// @param leaf_data The leafs data flatbuffer pointer.
+/// @param leaf_data_size The leafs data flatbuffer size.
+/// @param leaf_metadata The leafs metadata flatbuffer pointer.
+/// @param leaf_metadata_size The leafs meatdata flatbuffer size.
+/// @param user_data The data initially passed to the async function call is passed back.
+typedef void obx_tree_async_get_callback(obx_err status, obx_id id, const char* path, const void* leaf_data,
+                                         size_t leaf_data_size, const void* leaf_metadata, size_t leaf_metadata_size,
+                                         void* user_data);
+
+/// Like obx_tree_cursor_get_raw(), but asynchronous.
+/// @param with_metadata Flag if the callback also wants to receive the metadata (also as raw FlatBuffers).
+/// @param callback Optional (may be null) function that is called with results once the async operation completes.
+/// @param callback_user_data Any value you can supply, which is passed on to the callback (e.g. to identify user
+///        specific context).
+OBX_C_API obx_err obx_tree_async_get_raw(OBX_tree* tree, const char* path, bool with_metadata,
+                                         obx_tree_async_get_callback* callback, void* callback_user_data);
 
 /// Callback for obx_tree_async_put_raw().
 /// \note If the given status is an error, you can use functions like obx_last_error_message() to gather more info
@@ -2201,6 +2851,9 @@ OBX_C_API OBX_store* obx_weak_store_lock(OBX_weak_store* weak_store);
 //----------------------------------------------
 OBX_C_API void obx_bytes_free(OBX_bytes* bytes);
 
+/// Free the array struct
+OBX_C_API void obx_bytes_score_array_free(OBX_bytes_score_array* array);
+
 /// Allocate a bytes array struct of the given size, ready for the data to be pushed
 /// @returns NULL if the operation failed, see functions like obx_last_error_code() to get error details
 OBX_C_API OBX_bytes_array* obx_bytes_array(size_t count);
@@ -2220,6 +2873,9 @@ OBX_C_API void obx_id_array_free(OBX_id_array* array);
 
 /// Free the array struct
 OBX_C_API void obx_string_array_free(OBX_string_array* array);
+
+/// Free the array struct
+OBX_C_API void obx_id_score_array_free(OBX_id_score_array* array);
 
 /// Free the array struct
 OBX_C_API void obx_int64_array_free(OBX_int64_array* array);
@@ -2268,7 +2924,7 @@ OBX_C_API obx_err obx_admin_opt_store_path(OBX_admin_options* opt, const char* d
 
 /// Set the address and port on which the underlying http-server should server the admin web UI.
 /// Defaults to "http://127.0.0.1:8081"
-/// @note: you can use for e.g. "http://127.0.0.1:0" for automatic free port assignment - see obx_admin_bound_port().
+/// @note: you can use for e.g. "http://127.0.0.1:0" for automatic free port assignment - see obx_admin_port().
 OBX_C_API obx_err obx_admin_opt_bind(OBX_admin_options* opt, const char* uri);
 
 /// Configure the server to use SSL, with the given certificate.

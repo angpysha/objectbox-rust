@@ -94,7 +94,7 @@ impl Model {
         uid: c::obx_uid,
         // type === typedef, is a reserved keyword, intentional
         typ: c::OBXPropertyType,
-        flags: c::OBXPropertyFlags,
+        flags: u32,
     ) -> Self {
         if self.error.is_none() {
             let c_name = ffi::CString::new(name).unwrap();
