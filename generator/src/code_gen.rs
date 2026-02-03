@@ -37,11 +37,13 @@ trait CodeGenEntityExt {
 }
 
 fn encode_flatten(
-    field_type: u32,
-    flags: Option<u32>,
+    prop: &ModelProperty,
     offset: usize,
-    name: &String,
 ) -> Tokens<Rust> {
+    let field_type = prop.type_field;
+    let flags = prop.flags;
+    let name = &prop.name;
+    
     if let Some(f) = flags {
         if f == (ob_consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE | ob_consts::OBXPropertyFlags_ID) {
             let t: Tokens<Rust> = quote! {
@@ -51,6 +53,94 @@ fn encode_flatten(
         }
     }
 
+    // Для Optional полів генеруємо код з if let Some()
+    if prop.is_optional() {
+        return match field_type {
+            ob_consts::OBXPropertyType_StringVector => {
+                quote! {
+                    if let Some(ref val) = self.$name {
+                        let strs_vec_$offset = val.iter()
+                            .map(|s| builder.create_string(s.as_str()))
+                            .collect::<Vec<_>>();
+                        let vec_$offset = builder.create_vector(strs_vec_$offset.as_slice());
+                        builder.push_slot_always($offset, vec_$offset);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_ByteVector => {
+                quote! {
+                    if let Some(ref val) = self.$name {
+                        let byte_vec_$offset = builder.create_vector(val.as_slice());
+                        builder.push_slot_always($offset, byte_vec_$offset);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_String => {
+                quote! {
+                    if let Some(ref val) = self.$name {
+                        let str_$offset = builder.create_string(val.as_str());
+                        builder.push_slot_always($offset, str_$offset);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_Char => {
+                quote! {
+                    if let Some(val) = self.$name {
+                        builder.push_slot_always($offset, val as u32);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_Bool => {
+                quote! {
+                    if let Some(val) = self.$name {
+                        builder.push_slot::<bool>($offset, val, false);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_Float => {
+                quote! {
+                    if let Some(val) = self.$name {
+                        builder.push_slot::<f32>($offset, val, 0.0);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_Double => {
+                quote! {
+                    if let Some(val) = self.$name {
+                        builder.push_slot::<f64>($offset, val, 0.0);
+                    }
+                }
+            }
+            _ => {
+                let inferred_type_bits = match field_type {
+                    ob_consts::OBXPropertyType_Byte => "8",
+                    ob_consts::OBXPropertyType_Short => "16",
+                    ob_consts::OBXPropertyType_Int => "32",
+                    ob_consts::OBXPropertyType_Long => "64",
+                    _ => panic!("Unknown type"),
+                };
+                let is_unsigned = if let Some(f) = flags {
+                    if (f & ob_consts::OBXPropertyFlags_UNSIGNED)
+                        == ob_consts::OBXPropertyFlags_UNSIGNED
+                    {
+                        "u"
+                    } else {
+                        "i"
+                    }
+                } else {
+                    "i"
+                };
+
+                quote! {
+                    if let Some(val) = self.$name {
+                        builder.push_slot::<$is_unsigned$inferred_type_bits>($offset, val, 0);
+                    }
+                }
+            }
+        };
+    }
+
+    // Для не-Optional полів використовуємо існуючий код
     let new_tokens: Tokens<Rust> = match field_type {
         ob_consts::OBXPropertyType_StringVector => {
             quote! {
@@ -116,9 +206,43 @@ fn encode_flatten(
     new_tokens
 }
 
-fn encode_to_fb_unnested(field_type: u32, offset: usize, name: &String) -> Tokens<Rust> {
+fn encode_to_fb_unnested(prop: &ModelProperty, offset: usize) -> Tokens<Rust> {
+    let field_type = prop.type_field;
+    let name = &prop.name;
     let wip_offset = &rust::import("flatbuffers", "WIPOffset");
 
+    // Для Optional полів генеруємо код з if let Some()
+    if prop.is_optional() {
+        return match field_type {
+            ob_consts::OBXPropertyType_StringVector => {
+                quote! {
+                    let vec_$offset = self.$name.as_ref().map(|v| {
+                        let strs_vec = v.iter()
+                            .map(|s| builder.create_string(s.as_str()))
+                            .collect::<Vec<$wip_offset<&str>>>();
+                        builder.create_vector(strs_vec.as_slice())
+                    });
+                }
+            }
+            ob_consts::OBXPropertyType_ByteVector => {
+                quote! {
+                    let byte_vec_$offset = self.$name.as_ref().map(|v| {
+                        builder.create_vector(v.as_slice())
+                    });
+                }
+            }
+            ob_consts::OBXPropertyType_String => {
+                quote! {
+                    let str_$offset = self.$name.as_ref().map(|s| {
+                        builder.create_string(s.as_str())
+                    });
+                }
+            }
+            _ => quote!(), // Non-string/byte vectors or other types don't need unnested handling for Option
+        };
+    }
+
+    // Для не-Optional полів використовуємо існуючий код
     let new_tokens: Tokens<Rust> = match field_type {
         ob_consts::OBXPropertyType_StringVector => {
             quote! {
@@ -189,7 +313,7 @@ impl CodeGenEntityExt for ModelEntity {
             .properties
             .iter()
             .enumerate()
-            .map(|(i, p)| encode_to_fb_unnested(p.type_field, i * 2 + 4, &p.name))
+            .map(|(i, p)| encode_to_fb_unnested(p, i * 2 + 4))
             .collect();
 
         let mut props_unsorted: Vec<(usize, Tokens<Rust>)> = self
@@ -199,7 +323,7 @@ impl CodeGenEntityExt for ModelEntity {
             .map(|(i, p)| {
                 (
                     p.to_sorting_priority(),
-                    encode_flatten(p.type_field, p.flags, i * 2 + 4, &p.name),
+                    encode_flatten(p, i * 2 + 4),
                 )
             })
             .collect();

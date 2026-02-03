@@ -15,6 +15,9 @@ pub struct Property {
     pub id: id::IdUid,
     pub flags: consts::OBXPropertyFlags,
     pub index_id: Option<String>,
+    // Rust type string для генерації коду (НЕ серіалізується в JSON)
+    // Аналогічно dartFieldType в Dart, але для Rust типів
+    pub rust_type: String, // "String", "Option<String>", "i32", "Option<i32>", etc.
 }
 
 impl Property {
@@ -25,6 +28,7 @@ impl Property {
             id: id::IdUid::zero(),
             flags: 0,
             index_id: None,
+            rust_type: String::new(),
         }
     }
 
@@ -59,6 +63,7 @@ impl Property {
             id,
             flags: obx_property_flags,
             index_id,
+            rust_type,
         } = &mut property;
 
         if let Some(ident) = &field.ident {
@@ -132,16 +137,21 @@ impl Property {
                 }
             }
 
+            // Розпізнавання Option<T> та встановлення rust_type
+            // Аналогічно Dart: dartFieldType = typeName + (isNullable ? '?' : '')
             let idents = get_idents_from_path(&field.ty);
-            let ident_joined = idents.iter().map(|i| i.to_string()).collect::<String>();
-            let ident = ident_joined.as_str();
-
-            // TODO discuss support for Option<Primitive>,
-            // index is a special case, where index == 0, has a special meaning
-            // wrt to the Store and Box (not rust's)
-            // e.g. the indent.as_str() would be for Option<String> => OptionString
-
-            *obx_property_type = match ident {
+            let is_option = idents.len() >= 2 && idents[0].to_string() == "Option";
+            
+            // Встановлюємо rust_type для генерації коду
+            if is_option {
+                // Option<T> - витягуємо внутрішній тип T
+                let inner_idents = &idents[1..];
+                let inner_type_str = inner_idents.iter().map(|i| i.to_string()).collect::<String>();
+                *rust_type = format!("Option<{}>", inner_type_str);
+                
+                // Визначаємо OBXPropertyType на основі внутрішнього типу
+                let inner_ident_joined = inner_type_str.as_str();
+                *obx_property_type = match inner_ident_joined {
                 "bool" => consts::OBXPropertyType_Bool,
                 "i8" => consts::OBXPropertyType_Byte,
                 "i16" => consts::OBXPropertyType_Short,
@@ -158,15 +168,50 @@ impl Property {
                 "VecString" => consts::OBXPropertyType_StringVector,
                 "Vecu8" => consts::OBXPropertyType_ByteVector,
                 _ => 0,
-            };
+                };
+                
+                // Встановлюємо flags на основі внутрішнього типу
+                *obx_property_flags |= match inner_ident_joined {
+                    "u8" => consts::OBXPropertyFlags_UNSIGNED,
+                    "u16" => consts::OBXPropertyFlags_UNSIGNED,
+                    "u32" => consts::OBXPropertyFlags_UNSIGNED,
+                    "u64" => consts::OBXPropertyFlags_UNSIGNED,
+                    _ => 0,
+                };
+            } else {
+                // Не Option - використовуємо весь тип
+                let ident_joined = idents.iter().map(|i| i.to_string()).collect::<String>();
+                *rust_type = ident_joined.clone();
+                
+                // Визначаємо OBXPropertyType на основі повного типу
+                *obx_property_type = match ident_joined.as_str() {
+                    "bool" => consts::OBXPropertyType_Bool,
+                    "i8" => consts::OBXPropertyType_Byte,
+                    "i16" => consts::OBXPropertyType_Short,
+                    "u16" => consts::OBXPropertyType_Short,
+                    "char" => consts::OBXPropertyType_Char,
+                    "u32" => consts::OBXPropertyType_Int,
+                    "i32" => consts::OBXPropertyType_Int,
+                    "u64" => consts::OBXPropertyType_Long,
+                    "i64" => consts::OBXPropertyType_Long,
+                    "f32" => consts::OBXPropertyType_Float,
+                    "f64" => consts::OBXPropertyType_Double,
+                    "u8" => consts::OBXPropertyType_Byte,
+                    "String" => consts::OBXPropertyType_String,
+                    "VecString" => consts::OBXPropertyType_StringVector,
+                    "Vecu8" => consts::OBXPropertyType_ByteVector,
+                    _ => 0,
+                };
 
-            *obx_property_flags |= match ident {
-                "u8" => consts::OBXPropertyFlags_UNSIGNED,
-                "u16" => consts::OBXPropertyFlags_UNSIGNED,
-                "u32" => consts::OBXPropertyFlags_UNSIGNED,
-                "u64" => consts::OBXPropertyFlags_UNSIGNED,
-                _ => 0,
-            };
+                // Встановлюємо flags на основі типу
+                *obx_property_flags |= match ident_joined.as_str() {
+                    "u8" => consts::OBXPropertyFlags_UNSIGNED,
+                    "u16" => consts::OBXPropertyFlags_UNSIGNED,
+                    "u32" => consts::OBXPropertyFlags_UNSIGNED,
+                    "u64" => consts::OBXPropertyFlags_UNSIGNED,
+                    _ => 0,
+                };
+            }
 
             return Some(property);
         }

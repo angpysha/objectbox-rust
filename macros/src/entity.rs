@@ -98,6 +98,7 @@ impl Entity {
                 type_field: f.field_type,
                 flags,
                 index_id,
+                rust_type: f.rust_type.clone(), // Передача rust_type для генерації коду
             };
             v.push(p);
         }

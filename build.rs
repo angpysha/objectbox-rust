@@ -4,8 +4,25 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // Path to ObjectBox library - can be overridden via OBX_LIB_PATH environment variable
+    // First try project-local lib directory, then fallback to Downloads
+    let cargo_manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let local_lib_path = cargo_manifest_dir.join("lib");
+    
+    let lib_path = env::var("OBX_LIB_PATH")
+        .unwrap_or_else(|_| {
+            if local_lib_path.exists() && local_lib_path.join("libobjectbox.dylib").exists() {
+                local_lib_path.to_string_lossy().to_string()
+            } else {
+                "/Users/andrii/Downloads/objectbox-macos-universal (1)/lib".to_string()
+            }
+        });
+    
+    // Tell cargo to tell rustc where to find the objectbox shared library.
+    println!("cargo:rustc-link-search=native={}", lib_path);
+    
     // Tell cargo to tell rustc to link the objectbox shared library.
-    println!("cargo:rustc-link-lib=objectbox");
+    println!("cargo:rustc-link-lib=dylib=objectbox");
 
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for

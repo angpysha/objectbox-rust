@@ -39,9 +39,23 @@ pub struct Entity {
     pub t_i64: i64,
     pub t_f32: f32,
     pub t_f64: f64,
-    pub t_string: String,
+    pub t_string: Option<String>,
     pub t_char: char,
     pub t_vec_string: Vec<String>,
     pub t_vec_bytes: Vec<u8>,
-    // transient: Option<bool> // not yet supported
+}
+
+// Тестова сутність з Option полями
+#[derive(Debug)]
+#[entity]
+pub struct EntityWithOptionals {
+    #[id]
+    pub id: u64,
+    pub required_name: String,
+    pub required_age: i32,
+    pub optional_nickname: Option<String>,
+    pub optional_score: Option<f64>,
+    pub optional_count: Option<i32>,
+    pub optional_active: Option<bool>,
+    pub optional_flag: Option<u8>,
 }

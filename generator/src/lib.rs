@@ -248,3 +248,9 @@ pub fn generate_assets(out_path: &PathBuf, target_dir: &PathBuf) {
         .write_json(&json_dest_path)
         .generate_code(&ob_dest_path);
 }
+
+pub fn generate_from_model_json(model_json_path: &PathBuf, out_path: &PathBuf) {
+    let model_info = ModelInfo::from_json_file(model_json_path);
+    let mut ob_dest_path = out_path.join("objectbox_gen.rs");
+    model_info.generate_code(&ob_dest_path);
+}

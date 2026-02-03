@@ -150,6 +150,11 @@ pub struct ModelProperty {
     pub flags: Option<ob_consts::OBXPropertyFlags>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index_id: Option<String>,
+    // Rust type string для генерації коду (тепер СЕРІАЛІЗУЄТЬСЯ в objectbox-model.json)
+    // Аналогічно dartFieldType в Dart, але для Rust типів
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "rustType")] // Використовуємо camelCase як в Dart
+    pub rust_type: String, // "String", "Option<String>", "i32", "Option<i32>", etc.
 }
 
 fn split_id(input: &str) -> (&str, &str) {
@@ -158,6 +163,12 @@ fn split_id(input: &str) -> (&str, &str) {
 }
 
 impl ModelProperty {
+    /// Перевіряє чи поле є Optional (Option<T>)
+    /// Аналогічно Dart: fieldIsNullable = dartFieldType.endsWith('?')
+    pub(crate) fn is_optional(&self) -> bool {
+        self.rust_type.starts_with("Option<")
+    }
+
     pub(crate) fn as_fluent_builder_invocation(&self) -> Tokens<Rust> {
         let flags = if let Some(f) = self.flags { f } else { 0 };
         let (id, uid) = split_id(&self.id);
@@ -181,6 +192,14 @@ impl ModelProperty {
 
     pub(crate) fn as_struct_property_default(&self) -> Tokens<Rust> {
         let name = &self.name;
+        
+        // Для Optional полів завжди повертаємо None
+        if self.is_optional() {
+            return quote! {
+                $name: None
+            };
+        }
+        
         match self.type_field {
             ob_consts::OBXPropertyType_StringVector => quote! {
                 $name: Vec::<String>::new()
@@ -210,6 +229,7 @@ impl ModelProperty {
         }
     }
 
+    //noinspection ALL
     pub(crate) fn as_assigned_property(&self, offset: usize) -> Tokens<Rust> {
         let fuo = &rust::import("objectbox::flatbuffers", "ForwardsUOffset");
         let fvec = &rust::import("objectbox::flatbuffers", "Vector");
@@ -227,6 +247,64 @@ impl ModelProperty {
         }
 
         let name = &self.name;
+        
+        // Для Optional полів використовуємо .map() замість .unwrap()
+        if self.is_optional() {
+            return match self.type_field {
+                ob_consts::OBXPropertyType_StringVector => quote! {
+                    *$name = table.get::<$fuo<$fvec<$fuo<&str>>>>($offset, None)
+                        .map(|sv| sv.iter().map(|s| s.to_string()).collect());
+                },
+                ob_consts::OBXPropertyType_ByteVector => quote! {
+                    *$name = table.get::<$fuo<$fvec<u8>>>($offset, None)
+                        .map(|bv| bv.bytes().to_vec());
+                },
+                ob_consts::OBXPropertyType_String => quote! {
+                    *$name = table.get::<$fuo<&str>>($offset, None)
+                        .map(|s| s.to_string());
+                },
+                ob_consts::OBXPropertyType_Char => quote! {
+                    *$name = table.get::<u32>($offset, None)
+                        .and_then(|u| std::char::from_u32(u));
+                },
+                ob_consts::OBXPropertyType_Bool => quote! {
+                    *$name = table.get::<bool>($offset, None);
+                },
+                ob_consts::OBXPropertyType_Float => quote! {
+                    *$name = table.get::<f32>($offset, None);
+                },
+                ob_consts::OBXPropertyType_Double => quote! {
+                    *$name = table.get::<f64>($offset, None);
+                },
+                // rest of the integer types
+                _ => {
+                    let unsigned_flag = match self.flags {
+                        Some(f) => f,
+                        _ => 0,
+                    };
+                    let sign: Tokens<Rust> = if (unsigned_flag & ob_consts::OBXPropertyFlags_UNSIGNED)
+                        == ob_consts::OBXPropertyFlags_UNSIGNED
+                    {
+                        quote!(u)
+                    } else {
+                        quote!(i)
+                    };
+
+                    let bits: Tokens<Rust> = match self.type_field {
+                        ob_consts::OBXPropertyType_Byte => quote!(8),
+                        ob_consts::OBXPropertyType_Short => quote!(16),
+                        ob_consts::OBXPropertyType_Int => quote!(32),
+                        ob_consts::OBXPropertyType_Long => quote!(64),
+                        _ => panic!("Unknown OBXPropertyType"),
+                    };
+                    quote! {
+                        *$name = table.get::<$sign$bits>($offset, None);
+                    }
+                }
+            };
+        }
+        
+        // Для не-Optional полів використовуємо існуючий код з .unwrap()
         match self.type_field {
             ob_consts::OBXPropertyType_StringVector => quote! {
                 let fb_vec_$name = table.get::<$fuo<$fvec<$fuo<&str>>>>($offset, None);
@@ -398,6 +476,7 @@ impl ModelProperty {
     }
 }
 
+//noinspection ALL
 /// Use unique set of OBXPropertyType to generate the required blankets
 pub(crate) fn prop_type_to_impl_blanket(
     type_field: ob_consts::OBXPropertyType,
@@ -493,6 +572,7 @@ mod tests {
             type_field: 3,
             flags: Some(0),
             index_id: Some("2:3".to_string()),
+            rust_type: String::from("i16"), // default test type
         }
     }
 

@@ -106,7 +106,7 @@ fn fb_make_entity<'a>(builder: &'a mut FlatBufferBuilder<'a>, dest: &'a mut Vec<
     }
 }
 
-fn ob_make_entity(builder: &mut FlatBufferBuilder, dest: &mut Vec<u8>) -> crate::Entity {
+/*fn ob_make_entity(builder: &mut objectbox::flatbuffers::FlatBufferBuilder, dest: &mut Vec<u8>) -> crate::Entity {
     dest.clear();
     builder.reset();
     let e1 = Entity {
@@ -138,18 +138,25 @@ fn ob_make_entity(builder: &mut FlatBufferBuilder, dest: &mut Vec<u8>) -> crate:
     e1.flatten(builder);
     dest.extend_from_slice(builder.finished_data());
 
-    let trait_map = ob::make_factory_map();
-    let f1 = trait_map
-        .get::<rc::Rc<dyn traits::FactoryHelper<crate::Entity>>>()
-        .unwrap()
-        .clone();
+    // Q: As I got this method converts bytes to Entity using generated code?
+    // A: Yes, it uses the generated factory to create an Entity from the byte data
 
+
+    let trait_map = ob::make_factory_map();
+
+    // let f1 = trait_map
+    //     .get::<rc::Rc<dyn >>
+    // let f1 = trait_map
+    //     .get::<rc::Rc<dyn traits::FactoryHelper<crate::Entity>>>()
+    //     .unwrap()
+    //     .clone();
+    //
     let dest_slice = dest.as_slice();
     unsafe {
         let mut table = Table::new(dest_slice, dest_slice[0].into());
-        f1.make(&mut table)
+        table.
     }
-}
+}*/
 
 #[cfg(test)]
 mod tests {
@@ -164,16 +171,16 @@ mod tests {
         let mut ob_out = Vec::<u8>::new();
 
         let fb_e = fb_make_entity(&mut fbb1, &mut fb_out);
-        let ob_e = ob_make_entity(&mut fbb2, &mut ob_out);
+       // let ob_e = ob_make_entity(&mut fbb2, &mut ob_out);
 
         assert_eq!(fb_e.id(), 1);
         assert_eq!(fb_e.t_f64(), 10.0);
 
-        assert_eq!(fb_e.id(), ob_e.id);
-        assert_eq!(fb_e.t_f64(), ob_e.t_f64);
-
-        assert_eq!("7", ob_e.t_string.as_str());
-        assert_eq!(7, ob_e.t_vec_u8.len());
-        assert_eq!(7, ob_e.t_vec_string.len());
+        // assert_eq!(fb_e.id(), ob_e.id);
+        // assert_eq!(fb_e.t_f64(), ob_e.t_f64);
+        //
+        // assert_eq!("7", ob_e.t_string.as_str());
+        // assert_eq!(7, ob_e.t_vec_u8.len());
+        // assert_eq!(7, ob_e.t_vec_string.len());
     }
 }

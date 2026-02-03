@@ -29,7 +29,7 @@ fn uniqueness_tests() -> error::Result<()> {
         t_i64: 11,
         t_f32: 12.0,
         t_f64: 13.0,
-        t_string: "14".to_string(),
+        t_string: Option::from("14".to_string()),
         t_char: 'c',
         t_vec_string: vec!["str1".to_string(), "str2".to_string()],
         t_vec_bytes: vec![0x9, 0x8, 0x7, 0x6, 0x5],
