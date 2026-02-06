@@ -8,6 +8,38 @@ use crate::IdUidMacroHelper;
 
 // TODO implement flags, reference: https://github.com/objectbox/objectbox-dart/blob/main/generator/lib/src/entity_resolver.dart#L23-L30
 
+/// OBXPropertyType for ToOne relations (same as Dart's OBXPropertyType.Relation)
+pub const PROPERTY_TYPE_RELATION: consts::OBXPropertyType = 11;
+
+/// Represents a parsed field from the entity struct
+#[derive(Debug)]
+pub enum ParsedField {
+    /// Regular property (including ToOne, which becomes a property with type Relation)
+    Property(Property),
+    /// ToMany relation (standalone, not a property)
+    Relation(Relation),
+}
+
+/// Represents a ToMany standalone relation
+#[derive(Debug)]
+pub struct Relation {
+    pub name: String,           // Field name in the struct (e.g., "teachers")
+    pub id: id::IdUid,          // Relation ID
+    pub target_name: String,    // Target entity name (e.g., "Teacher")
+    pub rust_type: String,      // Full Rust type (e.g., "ToMany<Teacher>")
+}
+
+impl Relation {
+    pub fn new(name: String, target_name: String) -> Self {
+        Relation {
+            name: name.clone(),
+            id: id::IdUid::zero(),
+            target_name: target_name.clone(),
+            rust_type: format!("ToMany<{}>", target_name),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Property {
     pub name: String,
@@ -15,9 +47,12 @@ pub struct Property {
     pub id: id::IdUid,
     pub flags: consts::OBXPropertyFlags,
     pub index_id: Option<String>,
-    // Rust type string для генерації коду (НЕ серіалізується в JSON)
-    // Аналогічно dartFieldType в Dart, але для Rust типів
-    pub rust_type: String, // "String", "Option<String>", "i32", "Option<i32>", etc.
+    // Rust type string for code generation
+    pub rust_type: String, // "String", "Option<String>", "i32", "ToOne<Customer>", etc.
+    
+    // ToOne relation fields
+    pub relation_field: Option<String>,   // Original ToOne field name (e.g., "customer")
+    pub relation_target: Option<String>,  // Target entity name (e.g., "Customer")
 }
 
 impl Property {
@@ -29,7 +64,14 @@ impl Property {
             flags: 0,
             index_id: None,
             rust_type: String::new(),
+            relation_field: None,
+            relation_target: None,
         }
+    }
+    
+    /// Check if this property is a ToOne relation
+    pub fn is_to_one_relation(&self) -> bool {
+        self.field_type == PROPERTY_TYPE_RELATION
     }
 
     pub(crate) fn scan_obx_property_type_and_flags(
@@ -54,7 +96,8 @@ impl Property {
         (obx_property_type, obx_property_flags)
     }
 
-    pub(crate) fn from_syn_field(field: &syn::Field) -> Option<Property> {
+    /// Parse a syn::Field and return either a Property, Relation, or None
+    pub(crate) fn from_syn_field(field: &syn::Field) -> Option<ParsedField> {
         let mut property = Property::new();
 
         let Property {
@@ -64,63 +107,50 @@ impl Property {
             flags: obx_property_flags,
             index_id,
             rust_type,
+            relation_field,
+            relation_target,
         } = &mut property;
 
         if let Some(ident) = &field.ident {
-            let new_name = ident.to_string();
-            name.push_str(&new_name);
+            let field_name = ident.to_string();
+            name.push_str(&field_name);
 
-            // print_field_token_stream(field, new_name);
-
-            // TODO Document: for the minimal demo, ensure entities are pub
-            // TODO scan: i.e. parse them for pub keyword
-            // TODO declared on the src/lib.rs or src/main.rs and are pub
             // Attribute parsing
-            // TODO more error checking, certain combinations shouldn't be allowed
             for a in field.attrs.iter() {
-                // get attribute name from `#[name]`
                 if let Some(attr_path_ident) = a.path.get_ident() {
                     let attr_name: &str = &attr_path_ident.to_string();
-                    // TODO add safety precaution measures
-                    // TODO add extra parameters
                     match attr_name {
                         "id" => {
                             *obx_property_type = consts::OBXPropertyType_Long;
                             *obx_property_flags |= consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE
                                 | consts::OBXPropertyFlags_ID;
-                            return Some(property);
+                            *rust_type = "u64".to_string();
+                            return Some(ParsedField::Property(property));
                         }
                         "index" => {
                             *obx_property_flags |=
-                                consts::OBXPropertyFlags_INDEXED | consts::OBXPropertyFlags_UNIQUE; // 40
+                                consts::OBXPropertyFlags_INDEXED | consts::OBXPropertyFlags_UNIQUE;
                             *index_id = Some("0:0".to_owned());
-                        } // id, uid, type
+                        }
                         "unique" => {
                             *obx_property_flags |= consts::OBXPropertyFlags_UNIQUE;
                             *index_id = Some("0:0".to_owned());
-                        } // id, uid, type
-                        "backlink" => {}
-                        // "transient" => { quote::__private::ext::RepToTokensExt::next(&a); }, // TODO test if this really skips
-                        "property" => {} // id, uid, type, flags
+                        }
+                        "backlink" => {} // TODO: implement backlinks
+                        "property" => {}
                         _ => {
-                            // skip if not ours
                             continue;
                         }
                     }
                 }
 
-                // TODO move out as generalized function with lambda
-                // that parses depending on given attrib parameter names
-                // given by 'index', 'backlink', 'transient', 'property'
                 if let syn::parse::Result::Ok(m) = a.parse_meta() {
                     match m {
-                        // single parameter
                         syn::Meta::NameValue(mnv) => {
                             id.update_from_scan(&mnv);
                             (*obx_property_type, *obx_property_flags) =
                                 Self::scan_obx_property_type_and_flags(&mnv);
                         }
-                        // multiple parameters
                         syn::Meta::List(meta_list) => {
                             meta_list.nested.into_iter().for_each(|nm| {
                                 if let syn::NestedMeta::Meta(meta) = nm {
@@ -132,89 +162,98 @@ impl Property {
                                 }
                             });
                         }
-                        _ => {} // syn::Meta::Path(path)
+                        _ => {}
                     }
                 }
             }
 
-            // Розпізнавання Option<T> та встановлення rust_type
-            // Аналогічно Dart: dartFieldType = typeName + (isNullable ? '?' : '')
+            // Parse the type
             let idents = get_idents_from_path(&field.ty);
-            let is_option = idents.len() >= 2 && idents[0].to_string() == "Option";
+            if idents.is_empty() {
+                return None;
+            }
             
-            // Встановлюємо rust_type для генерації коду
+            let first_ident = idents[0].to_string();
+            
+            // Check for ToOne<T> relation
+            if first_ident == "ToOne" && idents.len() >= 2 {
+                let target_entity = idents[1..].iter().map(|i| i.to_string()).collect::<String>();
+                
+                // ToOne creates a property with type Relation
+                // Property name is fieldName + "Id" (e.g., "customerId")
+                *name = format!("{}Id", field_name);
+                *obx_property_type = PROPERTY_TYPE_RELATION;
+                *rust_type = format!("ToOne<{}>", target_entity);
+                *relation_field = Some(field_name.clone());
+                *relation_target = Some(target_entity.clone());
+                
+                // ToOne relations are automatically indexed
+                *obx_property_flags |= consts::OBXPropertyFlags_INDEXED 
+                    | consts::OBXPropertyFlags_INDEX_PARTIAL_SKIP_ZERO;
+                *index_id = Some("0:0".to_owned());
+                
+                return Some(ParsedField::Property(property));
+            }
+            
+            // Check for ToMany<T> relation
+            if first_ident == "ToMany" && idents.len() >= 2 {
+                let target_entity = idents[1..].iter().map(|i| i.to_string()).collect::<String>();
+                
+                // ToMany creates a standalone relation, not a property
+                let relation = Relation::new(field_name, target_entity);
+                return Some(ParsedField::Relation(relation));
+            }
+            
+            // Check for Option<T>
+            let is_option = first_ident == "Option" && idents.len() >= 2;
+            
             if is_option {
-                // Option<T> - витягуємо внутрішній тип T
                 let inner_idents = &idents[1..];
                 let inner_type_str = inner_idents.iter().map(|i| i.to_string()).collect::<String>();
                 *rust_type = format!("Option<{}>", inner_type_str);
                 
-                // Визначаємо OBXPropertyType на основі внутрішнього типу
                 let inner_ident_joined = inner_type_str.as_str();
-                *obx_property_type = match inner_ident_joined {
-                "bool" => consts::OBXPropertyType_Bool,
-                "i8" => consts::OBXPropertyType_Byte,
-                "i16" => consts::OBXPropertyType_Short,
-                "u16" => consts::OBXPropertyType_Short,
-                "char" => consts::OBXPropertyType_Char,
-                "u32" => consts::OBXPropertyType_Int,
-                "i32" => consts::OBXPropertyType_Int,
-                "u64" => consts::OBXPropertyType_Long,
-                "i64" => consts::OBXPropertyType_Long,
-                "f32" => consts::OBXPropertyType_Float,
-                "f64" => consts::OBXPropertyType_Double,
-                "u8" => consts::OBXPropertyType_Byte,
-                "String" => consts::OBXPropertyType_String,
-                "VecString" => consts::OBXPropertyType_StringVector,
-                "Vecu8" => consts::OBXPropertyType_ByteVector,
-                _ => 0,
-                };
-                
-                // Встановлюємо flags на основі внутрішнього типу
-                *obx_property_flags |= match inner_ident_joined {
-                    "u8" => consts::OBXPropertyFlags_UNSIGNED,
-                    "u16" => consts::OBXPropertyFlags_UNSIGNED,
-                    "u32" => consts::OBXPropertyFlags_UNSIGNED,
-                    "u64" => consts::OBXPropertyFlags_UNSIGNED,
-                    _ => 0,
-                };
+                *obx_property_type = Self::type_str_to_obx_type(inner_ident_joined);
+                *obx_property_flags |= Self::type_str_to_unsigned_flag(inner_ident_joined);
             } else {
-                // Не Option - використовуємо весь тип
                 let ident_joined = idents.iter().map(|i| i.to_string()).collect::<String>();
                 *rust_type = ident_joined.clone();
-                
-                // Визначаємо OBXPropertyType на основі повного типу
-                *obx_property_type = match ident_joined.as_str() {
-                    "bool" => consts::OBXPropertyType_Bool,
-                    "i8" => consts::OBXPropertyType_Byte,
-                    "i16" => consts::OBXPropertyType_Short,
-                    "u16" => consts::OBXPropertyType_Short,
-                    "char" => consts::OBXPropertyType_Char,
-                    "u32" => consts::OBXPropertyType_Int,
-                    "i32" => consts::OBXPropertyType_Int,
-                    "u64" => consts::OBXPropertyType_Long,
-                    "i64" => consts::OBXPropertyType_Long,
-                    "f32" => consts::OBXPropertyType_Float,
-                    "f64" => consts::OBXPropertyType_Double,
-                    "u8" => consts::OBXPropertyType_Byte,
-                    "String" => consts::OBXPropertyType_String,
-                    "VecString" => consts::OBXPropertyType_StringVector,
-                    "Vecu8" => consts::OBXPropertyType_ByteVector,
-                    _ => 0,
-                };
-
-                // Встановлюємо flags на основі типу
-                *obx_property_flags |= match ident_joined.as_str() {
-                    "u8" => consts::OBXPropertyFlags_UNSIGNED,
-                    "u16" => consts::OBXPropertyFlags_UNSIGNED,
-                    "u32" => consts::OBXPropertyFlags_UNSIGNED,
-                    "u64" => consts::OBXPropertyFlags_UNSIGNED,
-                    _ => 0,
-                };
+                *obx_property_type = Self::type_str_to_obx_type(&ident_joined);
+                *obx_property_flags |= Self::type_str_to_unsigned_flag(&ident_joined);
             }
 
-            return Some(property);
+            return Some(ParsedField::Property(property));
         }
         None
+    }
+    
+    /// Convert Rust type string to OBXPropertyType
+    fn type_str_to_obx_type(type_str: &str) -> consts::OBXPropertyType {
+        match type_str {
+            "bool" => consts::OBXPropertyType_Bool,
+            "i8" => consts::OBXPropertyType_Byte,
+            "i16" => consts::OBXPropertyType_Short,
+            "u16" => consts::OBXPropertyType_Short,
+            "char" => consts::OBXPropertyType_Char,
+            "u32" => consts::OBXPropertyType_Int,
+            "i32" => consts::OBXPropertyType_Int,
+            "u64" => consts::OBXPropertyType_Long,
+            "i64" => consts::OBXPropertyType_Long,
+            "f32" => consts::OBXPropertyType_Float,
+            "f64" => consts::OBXPropertyType_Double,
+            "u8" => consts::OBXPropertyType_Byte,
+            "String" => consts::OBXPropertyType_String,
+            "VecString" => consts::OBXPropertyType_StringVector,
+            "Vecu8" => consts::OBXPropertyType_ByteVector,
+            _ => 0,
+        }
+    }
+    
+    /// Get UNSIGNED flag for unsigned types
+    fn type_str_to_unsigned_flag(type_str: &str) -> consts::OBXPropertyFlags {
+        match type_str {
+            "u8" | "u16" | "u32" | "u64" => consts::OBXPropertyFlags_UNSIGNED,
+            _ => 0,
+        }
     }
 }

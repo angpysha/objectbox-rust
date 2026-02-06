@@ -6,7 +6,7 @@ fn main() {
     // Path to ObjectBox library - can be overridden via OBX_LIB_PATH environment variable
     // First try project-local lib directory, then fallback to Downloads
     let cargo_manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let project_root = cargo_manifest_dir.parent().unwrap().parent().unwrap(); // Go up from example/ to project root
+    let project_root = cargo_manifest_dir.parent().unwrap(); // Go up from example/ to project root
     let local_lib_path = project_root.join("lib");
     
     let lib_path = env::var("OBX_LIB_PATH")
@@ -31,11 +31,10 @@ fn main() {
         println!("cargo:rustc-env=DYLD_FALLBACK_LIBRARY_PATH={}", dyld_path);
     }
     
+    // Get the OUT_DIR where the macro writes .objectbox.info files
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let src_dir = cargo_manifest_dir.join("src");
-    let model_json_path = src_dir.join("objectbox-model.json");
 
-    // Generate code from objectbox-model.json (which includes rustType fields)
-    if model_json_path.exists() {
-        gen::generate_from_model_json(&model_json_path, &src_dir);
-    }
+    // Generate model.json and objectbox_gen.rs from .objectbox.info files
+    gen::generate_assets(&out_dir, &src_dir);
 }

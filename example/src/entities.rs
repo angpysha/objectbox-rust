@@ -1,6 +1,7 @@
 extern crate objectbox;
 
 use objectbox::macros::entity;
+use objectbox::relations::{ToOne, ToMany};
 
 #[derive(Debug)]
 #[entity]
@@ -58,4 +59,54 @@ pub struct EntityWithOptionals {
     pub optional_count: Option<i32>,
     pub optional_active: Option<bool>,
     pub optional_flag: Option<u8>,
+}
+
+// ==================== Relation Test Entities ====================
+
+// NOTE: Target entities must be defined BEFORE source entities that reference them
+
+/// Customer entity for testing ToOne relations
+/// (must be defined before Order which references it)
+#[derive(Debug)]
+#[entity]
+pub struct Customer {
+    #[id]
+    pub id: u64,
+    pub name: String,
+    pub email: String,
+}
+
+/// Teacher entity for testing ToMany relations  
+/// (must be defined before Student which references it)
+#[derive(Debug)]
+#[entity]
+pub struct Teacher {
+    #[id]
+    pub id: u64,
+    pub name: String,
+    pub subject: String,
+}
+
+/// Order entity with a ToOne relation to Customer
+#[derive(Debug)]
+#[entity]
+pub struct Order {
+    #[id]
+    pub id: u64,
+    pub description: String,
+    pub amount: f64,
+    /// ToOne relation: an order belongs to one customer
+    pub customer: ToOne<Customer>,
+}
+
+/// Student entity with a ToMany relation to Teacher
+#[derive(Debug)]
+#[entity]
+pub struct Student {
+    #[id]
+    pub id: u64,
+    pub name: String,
+    pub grade: i32,
+    /// ToMany relation: a student can have many teachers
+    pub teachers: ToMany<Teacher>,
 }

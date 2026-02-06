@@ -216,55 +216,202 @@ impl<T: OBBlanket> Box<'_, T> {
             c::get_result(obx_box_count(self.obx_box, limit, out_count), *out_count)
         }
     }
-    /*
-      pub fn get_backlink_ids(&self, property_id: obx_schema_id, id: obx_id) -> *mut OBX_id_array {
-          unsafe { obx_box_get_backlink_ids(self.obx_box, property_id, id) }
-      }
 
-      pub fn rel_put(&self, relation_id: obx_schema_id, source_id: obx_id, target_id: obx_id) -> obx_err {
-          unsafe { obx_box_rel_put(self.obx_box, relation_id, source_id, target_id) }
-      }
-
-      pub fn rel_remove(&self, relation_id: obx_schema_id, source_id: obx_id, target_id: obx_id) -> obx_err {
-          unsafe { obx_box_rel_remove(self.obx_box, relation_id, source_id, target_id) }
-      }
-
-      pub fn rel_get_ids(&self, relation_id: obx_schema_id, id: obx_id) -> *mut OBX_id_array {
-          unsafe { obx_box_rel_get_ids(self.obx_box, relation_id, id) }
-      }
-
-      // TODO convert user_data to Vec<u8>
-      pub fn visit_all(&mut self, visitor: obx_data_visitor, user_data: *mut ::std::os::raw::c_void) -> obx_err {
+    // ==================== Relation Methods ====================
+    
+    /// Add a ToMany relation between source and target entities.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `source_id` - The source entity ID
+    /// * `target_id` - The target entity ID to add to the relation
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// // Add teacher with ID 42 to student's teachers relation
+    /// student_box.rel_put(TEACHERS_RELATION_ID, student_id, 42)?;
+    /// ```
+    pub fn rel_put(
+        &self,
+        relation_id: obx_schema_id,
+        source_id: obx_id,
+        target_id: obx_id,
+    ) -> error::Result<()> {
         unsafe {
-            obx_box_visit_all(self.obx_box, visitor, user_data)
+            c::get_result(
+                obx_box_rel_put(self.obx_box, relation_id, source_id, target_id),
+                (),
+            )
         }
-      }
+    }
 
-        // TODO fix sooner than later
-        fn visit_many(&mut self, ids: &[c::obx_id], visitor: obx_data_visitor, user_data: *mut ::std::os::raw::c_void) -> obx_err {
-            unsafe {
-                obx_box_visit_many(self.obx_box, ids.as_ptr(), visitor, user_data)
+    /// Remove a ToMany relation between source and target entities.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `source_id` - The source entity ID
+    /// * `target_id` - The target entity ID to remove from the relation
+    pub fn rel_remove(
+        &self,
+        relation_id: obx_schema_id,
+        source_id: obx_id,
+        target_id: obx_id,
+    ) -> error::Result<()> {
+        unsafe {
+            c::get_result(
+                obx_box_rel_remove(self.obx_box, relation_id, source_id, target_id),
+                (),
+            )
+        }
+    }
+
+    /// Get all target IDs for a ToMany relation.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `source_id` - The source entity ID
+    ///
+    /// # Returns
+    /// A vector of target entity IDs in the relation
+    pub fn rel_get_ids(
+        &self,
+        relation_id: obx_schema_id,
+        source_id: obx_id,
+    ) -> error::Result<Vec<obx_id>> {
+        unsafe {
+            let ids_ptr = obx_box_rel_get_ids(self.obx_box, relation_id, source_id);
+            if ids_ptr.is_null() {
+                return Err(error::Error::new_local("Failed to get relation IDs"));
             }
+            
+            let ids_array = &*ids_ptr;
+            let mut result = Vec::with_capacity(ids_array.count as usize);
+            
+            if ids_array.count > 0 && !ids_array.ids.is_null() {
+                let slice = std::slice::from_raw_parts(ids_array.ids, ids_array.count as usize);
+                result.extend_from_slice(slice);
+            }
+            
+            obx_id_array_free(ids_ptr);
+            Ok(result)
         }
+    }
 
-      pub fn rel_get_backlink_ids(&mut self, relation_id: obx_schema_id, id: obx_id) -> *mut OBX_id_array {
+    /// Get backlink IDs for a ToOne relation (reverse lookup).
+    ///
+    /// For a ToOne property (e.g., Order.customerId -> Customer),
+    /// this returns all Order IDs that reference the given Customer.
+    ///
+    /// # Arguments
+    /// * `property_id` - The ToOne property ID (from the model schema)
+    /// * `id` - The target entity ID to find backlinks for
+    pub fn get_backlink_ids(
+        &self,
+        property_id: obx_schema_id,
+        id: obx_id,
+    ) -> error::Result<Vec<obx_id>> {
         unsafe {
-            obx_box_rel_get_backlink_ids(self.obx_box, relation_id, id)
+            let ids_ptr = obx_box_get_backlink_ids(self.obx_box, property_id, id);
+            if ids_ptr.is_null() {
+                return Err(error::Error::new_local("Failed to get backlink IDs"));
+            }
+            
+            let ids_array = &*ids_ptr;
+            let mut result = Vec::with_capacity(ids_array.count as usize);
+            
+            if ids_array.count > 0 && !ids_array.ids.is_null() {
+                let slice = std::slice::from_raw_parts(ids_array.ids, ids_array.count as usize);
+                result.extend_from_slice(slice);
+            }
+            
+            obx_id_array_free(ids_ptr);
+            Ok(result)
         }
-      }
+    }
 
-      pub fn ts_min_max(&mut self, out_min_id: *mut obx_id, out_min_value: *mut i64, out_max_id: *mut obx_id, out_max_value: *mut i64) -> obx_err {
+    /// Get backlink IDs for a ToMany relation (reverse lookup).
+    ///
+    /// For a ToMany relation (e.g., Student.teachers -> Teacher),
+    /// this returns all Student IDs that have the given Teacher in their relation.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `id` - The target entity ID to find backlinks for
+    pub fn rel_get_backlink_ids(
+        &self,
+        relation_id: obx_schema_id,
+        id: obx_id,
+    ) -> error::Result<Vec<obx_id>> {
         unsafe {
-            obx_box_ts_min_max(self.obx_box, out_min_id, out_min_value, out_max_id, out_max_value)
+            let ids_ptr = obx_box_rel_get_backlink_ids(self.obx_box, relation_id, id);
+            if ids_ptr.is_null() {
+                return Err(error::Error::new_local("Failed to get relation backlink IDs"));
+            }
+            
+            let ids_array = &*ids_ptr;
+            let mut result = Vec::with_capacity(ids_array.count as usize);
+            
+            if ids_array.count > 0 && !ids_array.ids.is_null() {
+                let slice = std::slice::from_raw_parts(ids_array.ids, ids_array.count as usize);
+                result.extend_from_slice(slice);
+            }
+            
+            obx_id_array_free(ids_ptr);
+            Ok(result)
         }
-      }
+    }
 
-      pub fn ts_min_max_range(&mut self, range_begin: i64, range_end: i64, out_min_id: *mut obx_id, out_min_value: *mut i64, out_max_id: *mut obx_id, out_max_value: *mut i64) -> obx_err {
-        unsafe {
-            obx_box_ts_min_max_range(self.obx_box, range_begin, range_end, out_min_id, out_min_value, out_max_id, out_max_value)
+    /// Remove all relations for a source entity from a ToMany relation.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `source_id` - The source entity ID
+    pub fn rel_clear(&self, relation_id: obx_schema_id, source_id: obx_id) -> error::Result<()> {
+        // Get all current targets and remove them
+        let target_ids = self.rel_get_ids(relation_id, source_id)?;
+        for target_id in target_ids {
+            self.rel_remove(relation_id, source_id, target_id)?;
         }
-      }
-    */
+        Ok(())
+    }
+
+    /// Add multiple targets to a ToMany relation at once.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `source_id` - The source entity ID
+    /// * `target_ids` - Slice of target entity IDs to add
+    pub fn rel_put_many(
+        &self,
+        relation_id: obx_schema_id,
+        source_id: obx_id,
+        target_ids: &[obx_id],
+    ) -> error::Result<()> {
+        for &target_id in target_ids {
+            self.rel_put(relation_id, source_id, target_id)?;
+        }
+        Ok(())
+    }
+
+    /// Remove multiple targets from a ToMany relation at once.
+    ///
+    /// # Arguments
+    /// * `relation_id` - The relation ID (from the model schema)
+    /// * `source_id` - The source entity ID
+    /// * `target_ids` - Slice of target entity IDs to remove
+    pub fn rel_remove_many(
+        &self,
+        relation_id: obx_schema_id,
+        source_id: obx_id,
+        target_ids: &[obx_id],
+    ) -> error::Result<()> {
+        for &target_id in target_ids {
+            self.rel_remove(relation_id, source_id, target_id)?;
+        }
+        Ok(())
+    }
+
+    // ==================== End Relation Methods ====================
 
     /// A box has a longer lifetime than a cursor,
     /// and the only thing keeping this method here

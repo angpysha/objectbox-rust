@@ -1,17 +1,17 @@
 use objectbox_generator::{id, model_json};
 use syn::{punctuated::Pair, DeriveInput};
 
-use crate::property::Property;
+use crate::property::{ParsedField, Property, Relation};
 
 // TODO see if uid type = u64 can be parameterized with generics e.g. 0x... 0b... etc.
 // TODO see how generics work with this e.g. "struct Gen<T> { field: T }"
-// TODO see how fields with Option<T> type, that default to None, and how store deals with this
 // TODO check if another attribute macro can mess with our attribute, otherwise panic if another attribute is present
 #[derive(Debug)]
 pub(crate) struct Entity {
     name: String,
     id: id::IdUid,
     fields: Vec<Property>,
+    relations: Vec<Relation>,
 }
 
 fn warn_transient(entity_name: &str, field_name: &str) {
@@ -19,7 +19,6 @@ fn warn_transient(entity_name: &str, field_name: &str) {
         "Error: There is a field {}::{} with an unsupported type.",
         entity_name, field_name
     );
-    // println!("Warning: {}.{} will be considered as a transient", entity_name, field_name);
 }
 
 impl Entity {
@@ -27,37 +26,38 @@ impl Entity {
     pub(crate) fn from_entity_name_and_fields(id: id::IdUid, derive_input: DeriveInput) -> Entity {
         let mut entity = Entity {
             name: derive_input.ident.to_string(),
-            id: id,
+            id,
             fields: Vec::<Property>::new(),
+            relations: Vec::<Relation>::new(),
         };
         let Entity {
             name: entity_name,
             id: _,
             fields,
+            relations,
         } = &mut entity;
+        
         if let syn::Data::Struct(ds) = derive_input.data {
             match ds.fields {
                 syn::Fields::Named(fields_named) => {
                     fields_named.named.pairs().for_each(|p| {
-                        match p {
-                            Pair::Punctuated(t, _) => {
-                                // TODO check for attribute: #[transient]
-                                if let Some(f) = Property::from_syn_field(t) {
-                                    if f.field_type == 0 {
-                                        warn_transient(&entity_name, &f.name);
+                        let field = match p {
+                            Pair::Punctuated(t, _) => t,
+                            Pair::End(t) => t,
+                        };
+                        
+                        // TODO check for attribute: #[transient]
+                        if let Some(parsed) = Property::from_syn_field(field) {
+                            match parsed {
+                                ParsedField::Property(prop) => {
+                                    if prop.field_type == 0 {
+                                        warn_transient(&entity_name, &prop.name);
                                     } else {
-                                        fields.push(f);
+                                        fields.push(prop);
                                     }
                                 }
-                            }
-                            Pair::End(t) => {
-                                // TODO check for attribute: #[transient]
-                                if let Some(f) = Property::from_syn_field(t) {
-                                    if f.field_type == 0 {
-                                        warn_transient(&entity_name, &f.name);
-                                    } else {
-                                        fields.push(f);
-                                    }
+                                ParsedField::Relation(rel) => {
+                                    relations.push(rel);
                                 }
                             }
                         }
@@ -68,6 +68,7 @@ impl Entity {
         } else {
             panic!("This macro attribute is only applicable on structs");
         }
+        
         if fields.is_empty() {
             panic!("Structs must have at least one attribute / property!");
         }
@@ -78,8 +79,6 @@ impl Entity {
         if let Some(field) = self.fields.last() {
             return field.id.clone();
         }
-        // TODO throw an error down the road, this should never happen
-        // TODO write test with an Entity without properties
         id::IdUid::zero()
     }
 
@@ -87,20 +86,32 @@ impl Entity {
         let mut v: Vec<model_json::ModelProperty> = Vec::new();
         for f in self.fields.iter() {
             let flags = if f.flags == 0 { None } else { Some(f.flags) };
-            let index_id = if let Some(x) = &f.index_id {
-                Some(x.to_string())
-            } else {
-                None
-            };
+            let index_id = f.index_id.clone();
+            
             let p = model_json::ModelProperty {
                 id: f.id.to_string(),
                 name: f.name.clone(),
                 type_field: f.field_type,
                 flags,
                 index_id,
-                rust_type: f.rust_type.clone(), // Передача rust_type для генерації коду
+                rust_type: f.rust_type.clone(),
+                relation_field: f.relation_field.clone(),
+                relation_target: f.relation_target.clone(),
             };
             v.push(p);
+        }
+        v
+    }
+
+    fn get_relations(&self) -> Vec<model_json::ModelRelation> {
+        let mut v: Vec<model_json::ModelRelation> = Vec::new();
+        for r in self.relations.iter() {
+            let rel = model_json::ModelRelation::new(
+                r.id.to_string(),
+                r.name.clone(),
+                r.target_name.clone(),
+            );
+            v.push(rel);
         }
         v
     }
@@ -111,9 +122,7 @@ impl Entity {
             last_property_id: self.get_last_property_id().to_string(),
             name: self.name.clone(),
             properties: self.get_properties(),
-            relations: Vec::new(), // TODO
-                                   // path: None,
-                                   // TODO see flags
+            relations: self.get_relations(),
         }
     }
 }

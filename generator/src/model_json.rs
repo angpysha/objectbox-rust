@@ -4,7 +4,6 @@ use genco::quote;
 use genco::tokens::quoted;
 use genco::Tokens;
 use serde_derive::{Deserialize, Serialize};
-use serde_json::Value;
 
 use std::env;
 use std::fs;
@@ -61,23 +60,32 @@ impl ModelInfo {
         } else {
             last_property_with_index_id.id.to_string()
         };
+        
+        // Find last relation ID across all entities
+        let last_relation_id = entities
+            .iter()
+            .flat_map(|e| e.relations.iter())
+            .last()
+            .map(|r| r.id.clone())
+            .unwrap_or_default();
+        
         ModelInfo {
-        note1: String::from("KEEP THIS FILE! Check it into a version control system (VCS) like git."),
-        note2: String::from("ObjectBox manages crucial IDs for your object model. See docs for details."),
-        note3: String::from("If you have VCS merge conflicts, you must resolve them according to ObjectBox docs."),
-        entities: entities.to_vec(), // rehydrate from slice to vec for JSON des, all of this without cloning
-        last_entity_id: last_entity_id.to_string(),
-        last_index_id: last_index_id.to_string(),
-        last_relation_id: String::from(""), // TODO
-        last_sequence_id: String::from(""), // TODO
-        model_version: 5,
-        model_version_parser_minimum: 5,
-        retired_entity_uids: Vec::new(), // TODO
-        retired_index_uids: Vec::new(), // TODO
-        retired_property_uids: Vec::new(), // TODO
-        retired_relation_uids: Vec::new(), // TODO
-        version: 1,
-      }
+            note1: String::from("KEEP THIS FILE! Check it into a version control system (VCS) like git."),
+            note2: String::from("ObjectBox manages crucial IDs for your object model. See docs for details."),
+            note3: String::from("If you have VCS merge conflicts, you must resolve them according to ObjectBox docs."),
+            entities: entities.to_vec(), // rehydrate from slice to vec for JSON des, all of this without cloning
+            last_entity_id: last_entity_id.to_string(),
+            last_index_id: last_index_id.to_string(),
+            last_relation_id,
+            last_sequence_id: String::from(""), // TODO
+            model_version: 5,
+            model_version_parser_minimum: 5,
+            retired_entity_uids: Vec::new(), // TODO
+            retired_index_uids: Vec::new(), // TODO
+            retired_property_uids: Vec::new(), // TODO
+            retired_relation_uids: Vec::new(), // TODO
+            version: 1,
+        }
     }
 
     pub(crate) fn write_json(&mut self, dest_path: &PathBuf) -> &mut Self {
@@ -108,7 +116,68 @@ pub struct ModelEntity {
     pub last_property_id: String,
     pub name: String,
     pub properties: Vec<ModelProperty>,
-    pub relations: Vec<Value>, // TODO
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<ModelRelation>,
+}
+
+/// ModelRelation describes a standalone ToMany relation between entities.
+/// 
+/// This is used for many-to-many relationships where the relation itself
+/// is stored in ObjectBox's internal relation table, separate from the entities.
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRelation {
+    /// Relation ID in format "id:uid"
+    pub id: String,
+    /// Name of the relation field in the source entity
+    pub name: String,
+    /// Target entity ID in format "id:uid"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    /// Target entity name (used during code generation, not serialized to model JSON)
+    #[serde(skip)]
+    pub target_name: String,
+    /// Rust type string for code generation (not serialized)
+    #[serde(skip)]
+    pub rust_type: String,
+}
+
+impl ModelRelation {
+    /// Create a new ModelRelation
+    pub fn new(id: String, name: String, target_name: String) -> Self {
+        let rust_type = format!("ToMany<{}>", &target_name);
+        ModelRelation {
+            id,
+            name,
+            target_id: None,
+            target_name,
+            rust_type,
+        }
+    }
+
+    /// Generate fluent builder invocation for the model builder
+    pub(crate) fn as_fluent_builder_invocation(&self, target_entity_id: &str) -> Tokens<Rust> {
+        let (id, uid) = split_id(&self.id);
+        let (target_id, target_uid) = split_id(target_entity_id);
+        
+        quote! {
+            .relation($id, $uid, $target_id, $target_uid)
+        }
+    }
+    
+    /// Generate struct field default for ToMany (ToMany::new())
+    pub(crate) fn as_struct_field_default(&self) -> Tokens<Rust> {
+        let to_many = &rust::import("objectbox::relations", "ToMany");
+        let name = &self.name;
+        quote! {
+            $name: $to_many::new()
+        }
+    }
+    
+    /// Get the struct field name
+    pub fn struct_field_name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl ModelEntity {
@@ -155,7 +224,18 @@ pub struct ModelProperty {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[serde(rename = "rustType")] // Використовуємо camelCase як в Dart
     pub rust_type: String, // "String", "Option<String>", "i32", "Option<i32>", etc.
+    
+    // ToOne relation fields (not serialized to JSON, used for code generation)
+    /// The field name in the source struct for ToOne relations (e.g., "customer")
+    #[serde(skip)]
+    pub relation_field: Option<String>,
+    /// The target entity name for ToOne relations (e.g., "Customer")
+    #[serde(skip)]
+    pub relation_target: Option<String>,
 }
+
+/// OBXPropertyType for ToOne relations
+pub const OBXPropertyType_Relation: ob_consts::OBXPropertyType = 11;
 
 fn split_id(input: &str) -> (&str, &str) {
     let v: Vec<&str> = input.split(':').collect();
@@ -167,6 +247,39 @@ impl ModelProperty {
     /// Аналогічно Dart: fieldIsNullable = dartFieldType.endsWith('?')
     pub(crate) fn is_optional(&self) -> bool {
         self.rust_type.starts_with("Option<")
+    }
+    
+    /// Check if this property is a ToOne relation
+    pub(crate) fn is_relation(&self) -> bool {
+        self.type_field == OBXPropertyType_Relation
+    }
+    
+    /// Check if this property is a ToOne relation field
+    pub(crate) fn is_to_one(&self) -> bool {
+        self.rust_type.starts_with("ToOne<")
+    }
+    
+    /// Get the target entity name for ToOne relations
+    pub(crate) fn get_relation_target(&self) -> Option<&str> {
+        self.relation_target.as_deref()
+    }
+    
+    /// Get the original ToOne field name
+    pub(crate) fn get_relation_field(&self) -> Option<&str> {
+        self.relation_field.as_deref()
+    }
+    
+    /// Get the struct field name (for ToOne, this is derived from property name by stripping "Id" suffix)
+    pub(crate) fn struct_field_name(&self) -> String {
+        if self.type_field == OBXPropertyType_Relation {
+            // Derive relation field from property name: "customerId" -> "customer"
+            if let Some(ref relation_field) = self.relation_field {
+                return relation_field.clone();
+            } else {
+                return self.name.strip_suffix("Id").unwrap_or(&self.name).to_string();
+            }
+        }
+        self.name.clone()
     }
 
     pub(crate) fn as_fluent_builder_invocation(&self) -> Tokens<Rust> {
@@ -181,16 +294,50 @@ impl ModelProperty {
                 $flags
             )
         };
-        if let Some(ii) = &self.index_id {
-            let (id, uid) = split_id(&ii);
+        
+        // For ToOne relations, add property_relation to specify the target entity
+        if self.type_field == OBXPropertyType_Relation {
+            // Derive target entity from relation_target or rust_type: "ToOne<Customer>" -> "Customer"
+            let target = if let Some(ref target_name) = self.relation_target {
+                target_name.clone()
+            } else if self.rust_type.starts_with("ToOne<") && self.rust_type.ends_with(">") {
+                // Extract entity name from "ToOne<EntityName>"
+                self.rust_type[6..self.rust_type.len()-1].to_string()
+            } else {
+                // Fallback: can't determine target, this shouldn't happen
+                "Unknown".to_string()
+            };
+            
+            if let Some(ref index_id_str) = &self.index_id {
+                let (idx_id, idx_uid) = split_id(index_id_str);
+                q.extend(quote! {
+                    .property_relation($(quoted(target.as_str())), $idx_id, $idx_uid)
+                });
+            }
+        } else if let Some(ii) = &self.index_id {
+            let (idx_id, idx_uid) = split_id(&ii);
             q.extend(quote! {
-                .property_index($id, $uid)
+                .property_index($idx_id, $idx_uid)
             });
         }
         q
     }
 
     pub(crate) fn as_struct_property_default(&self) -> Tokens<Rust> {
+        // For ToOne relations, use the original field name (e.g., "customer" not "customerId")
+        if self.type_field == OBXPropertyType_Relation {
+            // Derive relation field from property name: "customerId" -> "customer"
+            let rel_field = if let Some(ref rf) = self.relation_field {
+                rf.clone()
+            } else {
+                self.name.strip_suffix("Id").unwrap_or(&self.name).to_string()
+            };
+            let to_one = &rust::import("objectbox::relations", "ToOne");
+            return quote! {
+                $rel_field: $to_one::new()
+            };
+        }
+        
         let name = &self.name;
         
         // Для Optional полів завжди повертаємо None
@@ -244,6 +391,21 @@ impl ModelProperty {
                 };
                 return t;
             }
+        }
+        
+        // Handle ToOne relation - read target ID and initialize ToOne::with_id()
+        if self.type_field == OBXPropertyType_Relation {
+            // Derive relation field from property name: "customerId" -> "customer"
+            let rel_field = if let Some(ref rf) = self.relation_field {
+                rf.clone()
+            } else {
+                self.name.strip_suffix("Id").unwrap_or(&self.name).to_string()
+            };
+            let to_one = &rust::import("objectbox::relations", "ToOne");
+            return quote! {
+                let target_id = table.get::<i64>($offset, Some(0)).unwrap() as u64;
+                *$rel_field = $to_one::with_id(target_id);
+            };
         }
 
         let name = &self.name;

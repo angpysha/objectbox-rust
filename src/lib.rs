@@ -10,6 +10,7 @@ pub mod c;
 pub mod error;
 pub mod model;
 pub mod opt;
+pub mod relations;
 pub mod store;
 pub mod util;
 pub mod version;

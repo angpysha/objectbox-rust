@@ -10,6 +10,7 @@ use crate::model_json::prop_type_to_impl_blanket;
 use crate::model_json::ModelEntity;
 use crate::model_json::ModelInfo;
 use crate::model_json::ModelProperty;
+use crate::model_json::OBXPropertyType_Relation;
 use crate::ob_consts;
 use crate::util::StringHelper;
 
@@ -44,6 +45,7 @@ fn encode_flatten(
     let flags = prop.flags;
     let name = &prop.name;
     
+    // Handle ID property
     if let Some(f) = flags {
         if f == (ob_consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE | ob_consts::OBXPropertyFlags_ID) {
             let t: Tokens<Rust> = quote! {
@@ -51,6 +53,20 @@ fn encode_flatten(
             };
             return t;
         }
+    }
+    
+    // Handle ToOne relation - serialize the target ID from the ToOne field
+    if field_type == OBXPropertyType_Relation {
+        // Derive relation field from property name: "customerId" -> "customer"
+        let rel_field = if let Some(ref rf) = prop.relation_field {
+            rf.clone()
+        } else {
+            // Property name ends with "Id", strip it to get the ToOne field name
+            name.strip_suffix("Id").unwrap_or(name).to_string()
+        };
+        return quote! {
+            builder.push_slot::<i64>($offset, self.$rel_field.get_target_id() as i64, 0);
+        };
     }
 
     // Для Optional полів генеруємо код з if let Some()
@@ -357,6 +373,13 @@ impl CodeGenEntityExt for ModelEntity {
             .properties
             .iter()
             .map(|p| p.as_struct_property_default());
+        
+        // Generate defaults for ToMany relations
+        let destructured_relations = self
+            .relations
+            .iter()
+            .map(|r| r.as_struct_field_default());
+        
         let assigned_props = self
             .properties
             .iter()
@@ -372,18 +395,27 @@ impl CodeGenEntityExt for ModelEntity {
             }
         }
 
-        // TODO Store will be used for relations later
+        // Collect all field names (properties + relations) for destructuring
+        let all_field_names: Vec<String> = self
+            .properties
+            .iter()
+            .map(|p| p.struct_field_name())
+            .chain(self.relations.iter().map(|r| r.struct_field_name().to_string()))
+            .collect();
+
         quote! {
           impl $factory_helper<$entity> for $factory<$entity> {
             fn make(&self, table: &mut $fb_table) -> $entity {
               let mut object = self.new_entity();
-              // destructure
+              // destructure - use struct_field_name() to get the correct field name for ToOne relations
               let $entity {
-                $(for p in &self.properties join (, ) => $(&p.name))
+                $(for name in &all_field_names join (, ) => $(name.as_str()))
               } = &mut object;
               unsafe {
                 $(for p in assigned_props join () => $(p))
               }
+              // Note: ToMany relations are not deserialized from FlatBuffer
+              // They are loaded lazily via the Box relation API
               object
             }
 
@@ -394,6 +426,8 @@ impl CodeGenEntityExt for ModelEntity {
             fn new_entity(&self) -> $entity {
               $entity {
                 $(for p in destructured_props join (, ) => $(p))
+                $(if !self.relations.is_empty() => ,)
+                $(for r in destructured_relations join (, ) => $(r))
               }
             }
           }
@@ -447,6 +481,13 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
     let model = &rust::import("objectbox::model", "Model");
 
     let tokens = &mut Tokens::<Rust>::new();
+    
+    // Build a map of entity name -> entity id for resolving relation targets
+    let entity_id_map: std::collections::HashMap<&str, &str> = model_info
+        .entities
+        .iter()
+        .map(|e| (e.name.as_str(), e.id.as_str()))
+        .collect();
 
     for e in &model_info.entities {
         let entity_name = &e.name;
@@ -461,10 +502,27 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
 
         props_unsorted.sort_by(|a, b| a.0.cmp(&b.0));
         let props: Vec<Tokens<Rust>> = props_unsorted.iter().map(|t| t.1.clone()).collect();
+        
+        // Generate relation calls for ToMany relations
+        let relation_calls: Vec<Tokens<Rust>> = e
+            .relations
+            .iter()
+            .filter_map(|r| {
+                // Look up the target entity ID
+                if let Some(&target_id_str) = entity_id_map.get(r.target_name.as_str()) {
+                    let rel_id = r.id.as_comma_separated_str();
+                    let target_id = target_id_str.as_comma_separated_str();
+                    Some(quote! { .relation($rel_id, $target_id) })
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         let quote = quote! {
           .entity($(quoted(entity_name)), $entity_id)
           $props
+          $(for r in relation_calls => $r)
           .last_property_id($last_property_iduid)
         };
         tokens.append(quote);
@@ -485,6 +543,20 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
     } else {
         quote!()
     };
+    
+    // get last_relation_id
+    let mut last_relation: Option<Tokens<Rust>> = None;
+    for e in model_info.entities.as_slice() {
+        for r in e.relations.as_slice() {
+            last_relation = Some(r.id.as_comma_separated_str());
+        }
+    }
+    
+    let last_relation_id: Tokens<Rust> = if last_relation.is_some() {
+        quote! { .last_relation_id($last_relation) }
+    } else {
+        quote!()
+    };
 
     let last_entity = model_info.entities.last().unwrap();
     let last_entity_id = last_entity.id.as_comma_separated_str();
@@ -495,6 +567,7 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
         $(tokens.clone())
         .last_entity_id($last_entity_id)
         $last_index_id
+        $last_relation_id
       }
     }
 }

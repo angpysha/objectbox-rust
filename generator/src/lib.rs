@@ -83,9 +83,12 @@ mod tests {
 
 fn glob_generated_json(out_path: &PathBuf) -> Vec<PathBuf> {
     let suffix = "*.objectbox.info";
+    
+    // First try the exact out_path
     let glob_path = format!("{}/{}", out_path.to_str().unwrap_or_default(), suffix);
     let expect = format!("Failed to read glob pattern {}", suffix);
     let mut pbs: Vec<PathBuf> = Vec::new();
+    
     for entry in glob(&glob_path).expect(&expect) {
         match entry {
             Ok(path) => {
@@ -96,6 +99,54 @@ fn glob_generated_json(out_path: &PathBuf) -> Vec<PathBuf> {
             }
         }
     }
+    
+    // If no files found, try searching in all build directories
+    // This handles the case where proc_macro writes to a different OUT_DIR hash
+    if pbs.is_empty() {
+        // OUT_DIR is typically: target/debug/build/<crate>-<hash>/out
+        // We want to search: target/debug/build/<crate>-*/out/*.objectbox.info
+        if let Some(parent) = out_path.parent() {
+            if let Some(build_dir) = parent.parent() {
+                // Get the crate name prefix from the current directory name
+                if let Some(dir_name) = parent.file_name() {
+                    let dir_str = dir_name.to_string_lossy();
+                    // Extract crate name (everything before the last hyphen + hash)
+                    if let Some(pos) = dir_str.rfind('-') {
+                        let crate_prefix = &dir_str[..pos];
+                        let pattern = format!("{}/{}-*/out/{}", 
+                            build_dir.to_string_lossy(), crate_prefix, suffix);
+                        
+                        if let Ok(entries) = glob(&pattern) {
+                            let mut entity_map: std::collections::HashMap<String, PathBuf> = 
+                                std::collections::HashMap::new();
+                            
+                            for entry in entries.flatten() {
+                                // Use the most recent file for each entity name
+                                if let Some(fname) = entry.file_name() {
+                                    let name = fname.to_string_lossy().to_string();
+                                    // Check if this file is newer than existing
+                                    let should_replace = entity_map.get(&name)
+                                        .and_then(|existing| {
+                                            let existing_meta = std::fs::metadata(existing).ok()?;
+                                            let new_meta = std::fs::metadata(&entry).ok()?;
+                                            Some(new_meta.modified().ok()? > existing_meta.modified().ok()?)
+                                        })
+                                        .unwrap_or(true);
+                                    
+                                    if should_replace {
+                                        entity_map.insert(name, entry);
+                                    }
+                                }
+                            }
+                            
+                            pbs = entity_map.into_values().collect();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     pbs
 }
 
