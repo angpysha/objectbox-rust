@@ -8,43 +8,49 @@
 
 ## 🔴 КРИТИЧНИЙ ПРІОРИТЕТ
 
-### 1. Relations (Зв'язки між сутностями) ⚠️
-**Статус**: Базова інфраструктура є, але traits не реалізовані  
-**Файли**: `src/traits.rs:19`, `generator/src/model_json.rs:111`, `macros/src/entity.rs:114`
+### 1. Relations (Зв'язки між сутностями) ✅ DONE
+**Статус**: Реалізовано (2026-02-06)  
+**Файли**: `src/relations/to_one.rs`, `src/relations/to_many.rs`, `src/relations/info.rs`, `generator/src/model_json.rs`, `generator/src/code_gen.rs`, `macros/src/property.rs`, `macros/src/entity.rs`, `src/box.rs`
 
-**Завдання**:
-- [ ] Реалізувати `RelationExt` trait з методами `to_one_relation<T>()` та `to_many_relations()`
-- [ ] Додати підтримку `Vec<Value>` для relations в `ModelEntity`
-- [ ] Імплементувати автоматичне встановлення прапорців `INDEXED` та `INDEX_PARTIAL_SKIP_ZERO` для ToOne
-- [ ] Додати генерацію коду для lazy loading relations
-- [ ] Створити тести для ToOne та ToMany відношень
-- [ ] Додати підтримку `lastRelationId`, `retiredRelationUids` у model.json
+**Виконано**:
+- [x] Створено `ToOne<T>` struct з lazy loading та internal state (`Cell`)
+- [x] Створено `ToMany<T>` struct з change tracking та `RefCell`
+- [x] Додано `ModelRelation` struct для ToMany в `model_json.rs`
+- [x] Макроси парсять `ToOne<T>` → relation property (`customerId`, type 11, flags INDEXED | INDEX_PARTIAL_SKIP_ZERO)
+- [x] Макроси парсять `ToMany<T>` → standalone relation
+- [x] Генерація коду для серіалізації ToOne (target ID через FlatBuffers)
+- [x] Генерація `.property_relation()` для ToOne в model builder
+- [x] Генерація `.relation()` для ToMany в model builder
+- [x] Підтримка `lastRelationId` у model.json
+- [x] Expose relation API в `Box`: `rel_put`, `rel_remove`, `rel_get_ids`, `get_backlink_ids`, `rel_get_backlink_ids`
+- [x] Приклади: `Order` з `customer: ToOne<Customer>`, `Student` з `teachers: ToMany<Teacher>`
+- [x] Успішна компіляція та запуск example project
 
-**Примітки**:
-```rust
-// src/traits.rs - потрібна реалізація
-pub trait RelationExt {
-  fn to_one_relation<T>(&self) -> T;
-  fn to_many_relations(&self) -> Any
-}
-```
+### 2. Option<T> Support - Завершити тестування ✅ DONE
+**Статус**: Реалізація та тестування завершені (2026-02-06)  
+**Файли**: `example/tests/optional_fields.rs`, `example/src/entities.rs`, `generator/src/code_gen.rs`
 
-### 2. Option<T> Support - Завершити тестування ✓
-**Статус**: Реалізація завершена, потрібні тести  
-**Файли**: `example/tests/optional_fields.rs` (видалений), `macros/README.md:34-36`
+**Виконано**:
+- [x] Тестова сутність `EntityWithOptionals` з 5 Optional полями різних типів
+- [x] 14 тестів у `example/tests/optional_fields.rs`:
+  - [x] Збереження None значень (`test_save_entity_with_all_none`)
+  - [x] Збереження Some значень (`test_save_entity_with_all_some`)
+  - [x] Читання None значень (`test_read_none_values`)
+  - [x] Читання Some значень (`test_read_some_values`)
+  - [x] Оновлення Some → None (`test_update_some_to_none`)
+  - [x] Оновлення None → Some (`test_update_none_to_some`)
+  - [x] Змішані Some/None (`test_mixed_some_and_none`)
+  - [x] put_many з optional полями (`test_put_many_with_optionals`)
+  - [x] get_all з optional полями (`test_get_all_with_optionals`)
+  - [x] Query: is_null / is_not_null (`test_query_is_null_and_is_not_null`)
+  - [x] Query: eq/ne на Optional String (`test_query_eq_on_optional_string`)
+  - [x] Query: порівняння на Optional i32 (`test_query_comparison_on_optional_i32`)
+  - [x] Edge case: порожній рядок vs None (`test_empty_string_vs_none`)
+  - [x] Edge case: Some(0) vs None для числових типів (`test_zero_vs_none_for_optional_numeric`)
 
-**Завдання**:
-- [ ] Створити тестову сутність з Optional полями
-- [ ] Додати тести для Optional fields:
-  - [ ] Збереження None значень
-  - [ ] Збереження Some значень
-  - [ ] Читання None значень
-  - [ ] Читання Some значень
-  - [ ] Оновлення Some → None
-  - [ ] Оновлення None → Some
-  - [ ] Query операції з nullable полями
-
-**Примітка**: Основна реалізація вже є (rust_type, is_optional), потрібно тільки тестування.
+**Виправлені баги під час тестування**:
+- FlatBuffers: `create_string` викликався всередині table construction для Optional String → виправлено (використовується pre-created offset)
+- Optional числові типи: `Some(0)` зчитувався як `None` → виправлено (`push_slot_always` замість `push_slot`)
 
 ---
 
@@ -216,8 +222,8 @@ pub trait RelationExt {
 
 ### Оцінка складності:
 
-- 🔴 **Relations**: 5-7 днів (найскладніше)
-- 🔴 **Option<T> Tests**: 1-2 дні
+- ✅ **Relations**: DONE (2026-02-06)
+- ✅ **Option<T> Tests**: DONE (2026-02-06)
 - 🟠 **String Query Fixes**: 2-3 дні (потребує debugging)
 - 🟠 **Async Operations**: 3-4 дні
 - 🟠 **ID Collision**: 1-2 дні
@@ -230,8 +236,9 @@ pub trait RelationExt {
 ## 📝 ПРИМІТКИ
 
 ### Залежності між завданнями:
-- **Relations** залежать від коректної роботи Query operations
-- **Option<T>** має бути протестований перед Relations (nullable foreign keys)
+- ✅ **Relations** - реалізовано (ToOne, ToMany, rel_put/rel_remove/rel_get_ids API)
+- **Backlinks** залежать від Relations (тепер можна реалізувати)
+- **Option<T>** має бути протестований (nullable foreign keys)
 - **Async** потребує стабільної роботи базових Box operations
 
 ### Технологічний стек:
@@ -339,7 +346,7 @@ StreamBuilder<List<Person>>(
 ---
 
 ### 18. 🔗 Backlink Relations (Двосторонні зв'язки)
-**Статус**: ❌ Не реалізовано (навіть базові Relations не готові)  
+**Статус**: ❌ Не реалізовано (базові Relations ✅ готові)  
 **Пріоритет**: 🟡 СЕРЕДНІЙ (після ToOne/ToMany)  
 **Референс**: `objectbox-dart/objectbox/lib/src/annotations.dart:319-365`
 
@@ -363,7 +370,7 @@ class Customer {
 - [ ] "Updatable view" - зміни відображаються в обох напрямках
 - [ ] Не зберігає додаткові дані (тільки view)
 
-**Залежить від**: Реалізації базових ToOne/ToMany (#1)
+**Залежить від**: ✅ Реалізації базових ToOne/ToMany (#1) - DONE
 
 **Оцінка складності**: 2-3 дні (після Relations)
 
@@ -527,10 +534,10 @@ class Document {
 | Indexes | ✅ | ⚠️ Basic | 🟡 Medium |
 | Unique constraints | ✅ Full | ⚠️ Basic | 🟡 Medium |
 | **Relations** |
-| ToOne | ✅ | ❌ | 🔴 Critical |
-| ToMany | ✅ | ❌ | 🔴 Critical |
+| ToOne | ✅ | ✅ (new!) | ✅ |
+| ToMany | ✅ | ✅ (new!) | ✅ |
 | Backlinks | ✅ | ❌ | 🟡 Medium |
-| Lazy loading | ✅ | ❌ | 🔴 Critical |
+| Lazy loading | ✅ | ✅ (new!) | ✅ |
 | **Advanced Features** |
 | Vector Search (HNSW) | ✅ | ❌ | 🔴 Critical |
 | Observable Queries | ✅ | ❌ | 🟠 High |
@@ -559,8 +566,8 @@ class Document {
 ## 🎯 НОВІ РЕКОМЕНДОВАНІ ПРІОРИТЕТИ (з урахуванням Dart)
 
 ### Фаза 1: Foundation (4-6 тижнів)
-1. ✅ **Option<T>** - тестування (1-2 дні) 
-2. 🔴 **Relations** (ToOne/ToMany) - 5-7 днів
+1. ✅ **Option<T>** - тестування DONE (2026-02-06)
+2. ✅ **Relations** (ToOne/ToMany) - DONE (2026-02-06)
 3. 🔴 **DateTime support** - 2-3 дні
 4. 🟠 **String Query fixes** - 2-3 дні
 5. 🟠 **Typed vectors** (Vec<f32>, Vec<i16>) - 3-4 дні
@@ -634,4 +641,4 @@ class Document {
 ---
 
 *Документ оновлено з урахуванням аналізу ObjectBox Dart реалізації.*  
-*Останнє оновлення: 2026-02-01*
+*Останнє оновлення: 2026-02-06 (Relations #1, Option<T> Tests #2 marked as DONE)*

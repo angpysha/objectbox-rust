@@ -91,11 +91,27 @@ fn encode_flatten(
                     }
                 }
             }
-            ob_consts::OBXPropertyType_String => {
+            ob_consts::OBXPropertyType_StringVector => {
+                // Use pre-created vector offset from encode_to_fb_unnested
                 quote! {
-                    if let Some(ref val) = self.$name {
-                        let str_$offset = builder.create_string(val.as_str());
-                        builder.push_slot_always($offset, str_$offset);
+                    if let Some(v) = vec_$offset {
+                        builder.push_slot_always($offset, v);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_ByteVector => {
+                // Use pre-created byte vector offset from encode_to_fb_unnested
+                quote! {
+                    if let Some(v) = byte_vec_$offset {
+                        builder.push_slot_always($offset, v);
+                    }
+                }
+            }
+            ob_consts::OBXPropertyType_String => {
+                // Use pre-created string offset from encode_to_fb_unnested
+                quote! {
+                    if let Some(s) = str_$offset {
+                        builder.push_slot_always($offset, s);
                     }
                 }
             }
@@ -107,23 +123,26 @@ fn encode_flatten(
                 }
             }
             ob_consts::OBXPropertyType_Bool => {
+                // Use push_slot_always so that false is distinguishable from None
                 quote! {
                     if let Some(val) = self.$name {
-                        builder.push_slot::<bool>($offset, val, false);
+                        builder.push_slot_always::<bool>($offset, val);
                     }
                 }
             }
             ob_consts::OBXPropertyType_Float => {
+                // Use push_slot_always so that 0.0 is distinguishable from None
                 quote! {
                     if let Some(val) = self.$name {
-                        builder.push_slot::<f32>($offset, val, 0.0);
+                        builder.push_slot_always::<f32>($offset, val);
                     }
                 }
             }
             ob_consts::OBXPropertyType_Double => {
+                // Use push_slot_always so that 0.0 is distinguishable from None
                 quote! {
                     if let Some(val) = self.$name {
-                        builder.push_slot::<f64>($offset, val, 0.0);
+                        builder.push_slot_always::<f64>($offset, val);
                     }
                 }
             }
@@ -147,9 +166,10 @@ fn encode_flatten(
                     "i"
                 };
 
+                // Use push_slot_always so that 0 is distinguishable from None
                 quote! {
                     if let Some(val) = self.$name {
-                        builder.push_slot::<$is_unsigned$inferred_type_bits>($offset, val, 0);
+                        builder.push_slot_always::<$is_unsigned$inferred_type_bits>($offset, val);
                     }
                 }
             }
