@@ -382,10 +382,9 @@ impl ModelProperty {
         let fvec = &rust::import("objectbox::flatbuffers", "Vector");
 
         let name = &self.name;
+        // Handle ID property (check for ID flag bit, not exact flags value)
         if let Some(f) = self.flags {
-            if f == (ob_consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE
-                | ob_consts::OBXPropertyFlags_ID)
-            {
+            if (f & ob_consts::OBXPropertyFlags_ID) != 0 {
                 let t: Tokens<Rust> = quote! {
                     *$name = table.get::<u64>($offset, Some(0)).unwrap();
                 };

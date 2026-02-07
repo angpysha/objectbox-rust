@@ -115,26 +115,47 @@ impl Property {
             let field_name = ident.to_string();
             name.push_str(&field_name);
 
+            // Pre-detect if field type is String for Dart-compatible index flag selection.
+            // Dart uses INDEX_HASH for String fields, INDEXED (value) for others.
+            let pre_idents = get_idents_from_path(&field.ty);
+            let is_string_type = !pre_idents.is_empty() && {
+                let first = pre_idents[0].to_string();
+                first == "String"
+                    || (first == "Option"
+                        && pre_idents.len() >= 2
+                        && pre_idents[1].to_string() == "String")
+            };
+
+            // Track explicit index type from #[index(type = "hash"/"value"/"hash64")]
+            let mut explicit_index_type: Option<String> = None;
+
             // Attribute parsing
             for a in field.attrs.iter() {
+                // Track which attribute we're processing (for context-sensitive params)
+                let mut is_id_attr = false;
+
                 if let Some(attr_path_ident) = a.path.get_ident() {
                     let attr_name: &str = &attr_path_ident.to_string();
                     match attr_name {
                         "id" => {
+                            is_id_attr = true;
                             *obx_property_type = consts::OBXPropertyType_Long;
-                            *obx_property_flags |= consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE
-                                | consts::OBXPropertyFlags_ID;
+                            // Match Dart: just ID flag by default.
+                            // Use #[id(assignable)] to also set ID_SELF_ASSIGNABLE.
+                            *obx_property_flags |= consts::OBXPropertyFlags_ID;
                             *rust_type = "u64".to_string();
                             // Don't return early: allow further attributes (e.g.
                             // #[property(id = X, uid = Y)]) to set schema IDs,
                             // and allow #[id(uid = Y)] shorthand.
                         }
                         "index" => {
-                            *obx_property_flags |=
-                                consts::OBXPropertyFlags_INDEXED | consts::OBXPropertyFlags_UNIQUE;
+                            // Just mark as indexed; actual index strategy flag (INDEXED vs
+                            // INDEX_HASH) is applied after the loop based on field type.
+                            // NOTE: #[index] does NOT imply UNIQUE (matches Dart behavior).
                             *index_id = Some("0:0".to_owned());
                         }
                         "unique" => {
+                            // UNIQUE flag; index strategy applied after the loop.
                             *obx_property_flags |= consts::OBXPropertyFlags_UNIQUE;
                             *index_id = Some("0:0".to_owned());
                         }
@@ -156,19 +177,74 @@ impl Property {
                         }
                         syn::Meta::List(meta_list) => {
                             meta_list.nested.into_iter().for_each(|nm| {
-                                if let syn::NestedMeta::Meta(meta) = nm {
-                                    if let syn::Meta::NameValue(mnv) = meta {
+                                match nm {
+                                    syn::NestedMeta::Meta(syn::Meta::NameValue(mnv)) => {
                                         id.update_from_scan(&mnv);
                                         let (pt, pf) = Self::scan_obx_property_type_and_flags(&mnv);
                                         if pt != 0 { *obx_property_type = pt; }
                                         *obx_property_flags |= pf;
+
+                                        // Parse string-valued parameters:
+                                        //   #[index(type = "hash"/"hash64"/"value")]
+                                        //   #[unique(on_conflict = "replace")]
+                                        if let Some(key_ident) = mnv.path.get_ident() {
+                                            let key = key_ident.to_string();
+                                            if key == "type" {
+                                                if let syn::Lit::Str(ls) = &mnv.lit {
+                                                    explicit_index_type = Some(ls.value());
+                                                }
+                                            } else if key == "on_conflict" {
+                                                if let syn::Lit::Str(ls) = &mnv.lit {
+                                                    if ls.value() == "replace" {
+                                                        *obx_property_flags |= consts::OBXPropertyFlags_UNIQUE_ON_CONFLICT_REPLACE;
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
+                                    syn::NestedMeta::Meta(syn::Meta::Path(path)) => {
+                                        // Handle bare ident params: #[id(assignable)]
+                                        if is_id_attr {
+                                            if let Some(path_ident) = path.get_ident() {
+                                                if path_ident == "assignable" {
+                                                    *obx_property_flags |= consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             });
                         }
                         _ => {}
                     }
                 }
+            }
+
+            // Apply index strategy flags based on field type (Dart-compatible behavior):
+            //   String fields  → INDEX_HASH  (2048) by default
+            //   Other fields   → INDEXED     (8)    by default
+            // Can be overridden with #[index(type = "hash"/"hash64"/"value")]
+            if index_id.is_some() {
+                let index_flag = match explicit_index_type.as_deref() {
+                    Some("hash") => consts::OBXPropertyFlags_INDEX_HASH,
+                    Some("hash64") => consts::OBXPropertyFlags_INDEX_HASH64,
+                    Some("value") => consts::OBXPropertyFlags_INDEXED,
+                    None => {
+                        if is_string_type {
+                            consts::OBXPropertyFlags_INDEX_HASH
+                        } else {
+                            consts::OBXPropertyFlags_INDEXED
+                        }
+                    }
+                    Some(other) => {
+                        panic!(
+                            "Unknown index type: '{}'. Use 'hash', 'hash64', or 'value'.",
+                            other
+                        );
+                    }
+                };
+                *obx_property_flags |= index_flag;
             }
 
             // If type was already determined by an attribute (e.g. #[id]),

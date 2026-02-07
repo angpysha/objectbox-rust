@@ -45,9 +45,9 @@ fn encode_flatten(
     let flags = prop.flags;
     let name = &prop.name;
     
-    // Handle ID property
+    // Handle ID property (check for ID flag bit, not exact flags value)
     if let Some(f) = flags {
-        if f == (ob_consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE | ob_consts::OBXPropertyFlags_ID) {
+        if (f & ob_consts::OBXPropertyFlags_ID) != 0 {
             let t: Tokens<Rust> = quote! {
               builder.push_slot::<u64>($offset, self.$name, 0);
             };

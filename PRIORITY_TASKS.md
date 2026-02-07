@@ -167,7 +167,7 @@
 - [ ] Реалізувати #[transient] attribute для полів (`macros/src/entity.rs:44-54`)
 - [ ] Додати перевірку pub keyword для entities (`macros/src/property.rs:85-87`)
 - [ ] Додати safety precaution measures для властивостей (рядок 94-95)
-- [ ] Реалізувати flags згідно ObjectBox Dart (`macros/src/property.rs:9`)
+- [x] Реалізувати flags згідно ObjectBox Dart (`macros/src/property.rs:9`) ✅ DONE (2026-02-07)
 - [ ] Додати перевірку неприпустимих комбінацій атрибутів (рядок 89)
 
 ### 12. Documentation & Cleanup
@@ -190,7 +190,7 @@
 **Завдання**:
 - [ ] Переписати macros з використанням [darling](https://github.com/TedDriggs/darling)
 - [ ] Інтегрувати [cleaner abstractions](https://github.com/Buggaboo/lean_buffer)
-- [ ] Додати підтримку параметрів id/uid для entity macro
+- [x] Додати підтримку параметрів id/uid для entity macro ✅ DONE (2026-02-07)
 - [ ] Додати перевірку конфліктів атрибутів (`macros/src/entity.rs:9`)
 - [ ] Перевірити як працюють generics з entity macro (рядок 7)
 
@@ -411,36 +411,53 @@ class Customer {
 
 ---
 
-### 20. 🔐 Advanced Index Types
-**Статус**: ⚠️ Базова підтримка є  
+### 20. 🔐 Advanced Index Types ✅ DONE
+**Статус**: Реалізовано (2026-02-07)  
 **Пріоритет**: 🟡 СЕРЕДНІЙ
 
-**Dart має**:
-```dart
-@Entity()
-class Person {
-  @Index(type: IndexType.hash)    // 32-bit hash (default для String)
-  String? email;
-  
-  @Index(type: IndexType.hash64)  // 64-bit hash
-  String? username;
-  
-  @Index(type: IndexType.value)   // Value index (для "starts with")
-  String? name;
+**Реалізовано (Dart-compatible)**:
+```rust
+#[entity]
+pub struct Person {
+    #[id]
+    pub id: u64,
+    
+    #[index]                         // INDEX_HASH (default for String)
+    pub email: String,
+    
+    #[index(type = "hash64")]        // INDEX_HASH64
+    pub username: String,
+    
+    #[index(type = "value")]         // INDEXED (value index for "starts with")
+    pub name: String,
+    
+    #[index]                         // INDEXED (default for non-String)
+    pub age: i32,
+    
+    #[unique]                        // UNIQUE | INDEX_HASH (String)
+    pub code: String,
+    
+    #[unique]                        // UNIQUE | INDEXED (non-String)
+    pub serial: i32,
+    
+    #[unique(on_conflict = "replace")]  // UNIQUE_ON_CONFLICT_REPLACE
+    pub slug: String,
 }
 ```
 
-**Rust має тільки**:
-- ✅ `#[index]` (базовий, без типу)
-- ❌ Hash indexes
-- ❌ Value vs Hash розрізнення
-
-**Завдання**:
-- [ ] Додати `#[index(type = "hash")]` / `#[index(type = "value")]`
-- [ ] Оптимізація query планування на основі типу індексу
-- [ ] Документація коли використовувати який тип
-
-**Оцінка складності**: 2-3 дні
+**Виконано**:
+- [x] `#[index]` на String → `INDEX_HASH` (2048) — matches Dart default
+- [x] `#[index]` на non-String → `INDEXED` (8) — matches Dart default
+- [x] `#[index(type = "hash")]` → `INDEX_HASH` (2048)
+- [x] `#[index(type = "hash64")]` → `INDEX_HASH64` (4096)
+- [x] `#[index(type = "value")]` → `INDEXED` (8)
+- [x] `#[unique]` на String → `UNIQUE | INDEX_HASH` (2080)
+- [x] `#[unique]` на non-String → `UNIQUE | INDEXED` (40)
+- [x] `#[unique(on_conflict = "replace")]` → adds `UNIQUE_ON_CONFLICT_REPLACE` (32768)
+- [x] `#[id]` → `ID` (1) only (matches Dart `@Id()`)
+- [x] `#[id(assignable)]` → `ID | ID_SELF_ASSIGNABLE` (129) (matches Dart `@Id(assignable: true)`)
+- [x] Bug fix: `#[index]` no longer incorrectly sets UNIQUE flag
+- [x] Bug fix: code_gen.rs ID detection uses bitwise check instead of exact equality
 
 ---
 
@@ -538,8 +555,8 @@ class Document {
 | Entities & Properties | ✅ | ✅ | - |
 | CRUD Operations | ✅ | ✅ | - |
 | Queries | ✅ | ✅ (string ops fixed!) | - |
-| Indexes | ✅ | ⚠️ Basic | 🟡 Medium |
-| Unique constraints | ✅ Full | ⚠️ Basic | 🟡 Medium |
+| Indexes | ✅ | ✅ Dart-compatible (hash/hash64/value) | ✅ |
+| Unique constraints | ✅ Full | ✅ Dart-compatible (+on_conflict) | ✅ |
 | **Relations** |
 | ToOne | ✅ | ✅ (new!) | ✅ |
 | ToMany | ✅ | ✅ (new!) | ✅ |
@@ -648,4 +665,4 @@ class Document {
 ---
 
 *Документ оновлено з урахуванням аналізу ObjectBox Dart реалізації.*  
-*Останнє оновлення: 2026-02-06 (Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*
+*Останнє оновлення: 2026-02-07 (Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*
