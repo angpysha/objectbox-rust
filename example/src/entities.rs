@@ -113,3 +113,23 @@ pub struct Student {
     /// ToMany relation: a student can have many teachers
     pub teachers: ToMany<Teacher>,
 }
+
+/// Entity with renamed properties to test #[property(name = "...")]
+/// Rust uses snake_case but DB/model uses camelCase (like Dart's @Property(uid: ...) + name)
+#[derive(Debug)]
+#[entity]
+pub struct RenamedFieldsEntity {
+    #[id]
+    pub id: u64,
+    /// In DB stored as "itemName" (camelCase), in Rust accessed as "item_name" (snake_case)
+    #[property(name = "itemName")]
+    pub item_name: String,
+    /// In DB stored as "itemCount", in Rust accessed as "item_count"
+    #[property(name = "itemCount")]
+    pub item_count: i32,
+    /// In DB stored as "isActive", in Rust accessed as "is_active"
+    #[property(name = "isActive")]
+    pub is_active: bool,
+    /// Property without rename — name is the same in Rust and DB
+    pub regular_field: f64,
+}

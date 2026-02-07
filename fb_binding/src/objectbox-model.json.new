@@ -1,0 +1,120 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:897875800976308197",
+      "lastPropertyId": "15:7520050974650893851",
+      "name": "Entity",
+      "properties": [
+        {
+          "id": "1:12352133760186895738",
+          "name": "id",
+          "type": 6,
+          "flags": 1,
+          "rustType": "u64"
+        },
+        {
+          "id": "2:11482554569667149915",
+          "name": "t_i8",
+          "type": 2,
+          "rustType": "i8"
+        },
+        {
+          "id": "3:7305663355737351517",
+          "name": "t_u8",
+          "type": 2,
+          "flags": 8192,
+          "rustType": "u8"
+        },
+        {
+          "id": "4:5670044387597723121",
+          "name": "t_bool",
+          "type": 1,
+          "rustType": "bool"
+        },
+        {
+          "id": "5:4229114249451603968",
+          "name": "t_i16",
+          "type": 3,
+          "rustType": "i16"
+        },
+        {
+          "id": "6:15729995859670821023",
+          "name": "t_u16",
+          "type": 3,
+          "flags": 8192,
+          "rustType": "u16"
+        },
+        {
+          "id": "7:11453228909979465978",
+          "name": "t_i32",
+          "type": 5,
+          "rustType": "i32"
+        },
+        {
+          "id": "8:10344214259550378431",
+          "name": "t_u32",
+          "type": 5,
+          "flags": 8192,
+          "rustType": "u32"
+        },
+        {
+          "id": "9:2193280700626482844",
+          "name": "t_f32",
+          "type": 7,
+          "rustType": "f32"
+        },
+        {
+          "id": "10:1996003979741253258",
+          "name": "t_u64",
+          "type": 6,
+          "flags": 8192,
+          "rustType": "u64"
+        },
+        {
+          "id": "11:5639752757825933743",
+          "name": "t_i64",
+          "type": 6,
+          "rustType": "i64"
+        },
+        {
+          "id": "12:13488377410897204486",
+          "name": "t_f64",
+          "type": 8,
+          "rustType": "f64"
+        },
+        {
+          "id": "13:12720661206055859732",
+          "name": "t_string",
+          "type": 9,
+          "rustType": "String"
+        },
+        {
+          "id": "14:1298190050388923802",
+          "name": "t_vec_u8",
+          "type": 23,
+          "rustType": "Vecu8"
+        },
+        {
+          "id": "15:7520050974650893851",
+          "name": "t_vec_string",
+          "type": 30,
+          "rustType": "VecString"
+        }
+      ]
+    }
+  ],
+  "lastEntityId": "1:897875800976308197",
+  "lastIndexId": "1:12352133760186895738",
+  "lastRelationId": "",
+  "lastSequenceId": "",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [],
+  "retiredRelationUids": [],
+  "version": 1
+}

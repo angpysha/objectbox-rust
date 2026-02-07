@@ -43,7 +43,7 @@ fn encode_flatten(
 ) -> Tokens<Rust> {
     let field_type = prop.type_field;
     let flags = prop.flags;
-    let name = &prop.name;
+    let name = prop.rust_field_name();
     
     // Handle ID property (check for ID flag bit, not exact flags value)
     if let Some(f) = flags {
@@ -244,7 +244,7 @@ fn encode_flatten(
 
 fn encode_to_fb_unnested(prop: &ModelProperty, offset: usize) -> Tokens<Rust> {
     let field_type = prop.type_field;
-    let name = &prop.name;
+    let name = prop.rust_field_name();
     let wip_offset = &rust::import("flatbuffers", "WIPOffset");
 
     // Для Optional полів генеруємо код з if let Some()
@@ -328,13 +328,14 @@ impl CodeGenEntityExt for ModelEntity {
             panic!("No ID was defined for {}", self.name);
         };
 
+        let id_field = p.rust_field_name();
         quote! {
           impl $id_trait for $entity {
             fn get_id(&self) -> $obx_id {
-              self.$(p.name.as_str())
+              self.$id_field
             }
             fn set_id(&mut self, id: $obx_id) {
-              self.$(p.name.as_str()) = id;
+              self.$id_field = id;
             }
           }
         }

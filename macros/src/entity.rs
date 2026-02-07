@@ -88,13 +88,22 @@ impl Entity {
             let flags = if f.flags == 0 { None } else { Some(f.flags) };
             let index_id = f.index_id.clone();
             
+            // If db_name is set, use it as the model name and store the Rust field name in rust_name.
+            // Otherwise, name and rust_name are the same (rust_name left empty to save space).
+            let (model_name, rust_name) = if let Some(ref db) = f.db_name {
+                (db.clone(), f.name.clone())
+            } else {
+                (f.name.clone(), String::new())
+            };
+            
             let p = model_json::ModelProperty {
                 id: f.id.to_string(),
-                name: f.name.clone(),
+                name: model_name,
                 type_field: f.field_type,
                 flags,
                 index_id,
                 rust_type: f.rust_type.clone(),
+                rust_name,
                 relation_field: f.relation_field.clone(),
                 relation_target: f.relation_target.clone(),
             };

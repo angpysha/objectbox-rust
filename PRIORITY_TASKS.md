@@ -191,6 +191,11 @@
 - [ ] Переписати macros з використанням [darling](https://github.com/TedDriggs/darling)
 - [ ] Інтегрувати [cleaner abstractions](https://github.com/Buggaboo/lean_buffer)
 - [x] Додати підтримку параметрів id/uid для entity macro ✅ DONE (2026-02-07)
+- [x] Додати property name mapping: `#[property(name = "camelCase")]` ✅ DONE (2026-02-07)
+  - Rust struct використовує snake_case, DB/model зберігає camelCase (або будь-яке інше ім'я)
+  - Аналог Dart `@Property(uid: ...)` + field name / `@ExternalName`
+  - `rustName` field в objectbox-model.json для збереження Rust-імені коли воно відрізняється
+  - Тести: `example/tests/renamed_fields.rs` (3 тести: put/get, put_many/get_all, update)
 - [ ] Додати перевірку конфліктів атрибутів (`macros/src/entity.rs:9`)
 - [ ] Перевірити як працюють generics з entity macro (рядок 7)
 
@@ -539,7 +544,7 @@ class Document {
 
 **Завдання**:
 - [ ] `#[external_type(uuid)]` attribute
-- [ ] `#[external_name("_id")]` для mapping
+- [x] Property name mapping: `#[property(name = "...")]` ✅ DONE (2026-02-07) — аналог `@ExternalName`
 - [ ] Підтримка external property types enum
 - [ ] Конвертери між Rust і external типами
 
@@ -574,6 +579,7 @@ class Document {
 | FlexBuffers | ✅ | ❌ | 🟡 Medium |
 | UUID | ✅ | ❌ | 🟡 Medium |
 | **Developer Experience** |
+| Property name mapping | ✅ @ExternalName | ✅ #[property(name = "...")] | ✅ |
 | Code generation | ✅ | ✅ | - |
 | Admin UI | ✅ | ❌ | 🟢 Nice-to-have |
 | Documentation | ✅ Rich | ⚠️ Basic | 🟡 Medium |
@@ -665,4 +671,4 @@ class Document {
 ---
 
 *Документ оновлено з урахуванням аналізу ObjectBox Dart реалізації.*  
-*Останнє оновлення: 2026-02-07 (Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*
+*Останнє оновлення: 2026-02-07 (Property name mapping #13/#23, Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*

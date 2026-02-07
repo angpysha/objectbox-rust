@@ -43,6 +43,10 @@ impl Relation {
 #[derive(Debug)]
 pub struct Property {
     pub name: String,
+    /// Custom DB/model name from #[property(name = "...")].
+    /// When set, `name` is the Rust field name and `db_name` is the ObjectBox model name.
+    /// This allows snake_case in Rust but camelCase in DB, or Rust keyword avoidance.
+    pub db_name: Option<String>,
     pub field_type: consts::OBXPropertyType,
     pub id: id::IdUid,
     pub flags: consts::OBXPropertyFlags,
@@ -59,6 +63,7 @@ impl Property {
     pub(crate) fn new() -> Self {
         Property {
             name: String::new(),
+            db_name: None,
             field_type: 0,
             id: id::IdUid::zero(),
             flags: 0,
@@ -102,6 +107,7 @@ impl Property {
 
         let Property {
             name,
+            db_name,
             field_type: obx_property_type,
             id,
             flags: obx_property_flags,
@@ -185,11 +191,16 @@ impl Property {
                                         *obx_property_flags |= pf;
 
                                         // Parse string-valued parameters:
+                                        //   #[property(name = "camelCaseName")]
                                         //   #[index(type = "hash"/"hash64"/"value")]
                                         //   #[unique(on_conflict = "replace")]
                                         if let Some(key_ident) = mnv.path.get_ident() {
                                             let key = key_ident.to_string();
-                                            if key == "type" {
+                                            if key == "name" {
+                                                if let syn::Lit::Str(ls) = &mnv.lit {
+                                                    *db_name = Some(ls.value());
+                                                }
+                                            } else if key == "type" {
                                                 if let syn::Lit::Str(ls) = &mnv.lit {
                                                     explicit_index_type = Some(ls.value());
                                                 }

@@ -212,6 +212,7 @@ impl ModelEntity {
 #[serde(rename_all = "camelCase")]
 pub struct ModelProperty {
     pub id: String, // iduid = "1:12341820347123498124"
+    /// Property name in the ObjectBox model/DB (may differ from Rust field name)
     pub name: String,
     #[serde(rename = "type")]
     pub type_field: ob_consts::OBXPropertyType,
@@ -224,6 +225,12 @@ pub struct ModelProperty {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[serde(rename = "rustType")] // Використовуємо camelCase як в Dart
     pub rust_type: String, // "String", "Option<String>", "i32", "Option<i32>", etc.
+    
+    /// Rust field name when it differs from the DB name (e.g., "item_id" when DB name is "itemId").
+    /// Empty string means the Rust name is the same as `name`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "rustName")]
+    pub rust_name: String,
     
     // ToOne relation fields (not serialized to JSON, used for code generation)
     /// The field name in the source struct for ToOne relations (e.g., "customer")
@@ -269,6 +276,16 @@ impl ModelProperty {
         self.relation_field.as_deref()
     }
     
+    /// Get the Rust field name. Returns `rust_name` if set, otherwise falls back to `name`.
+    /// This is the name used in generated Rust code for struct field access.
+    pub(crate) fn rust_field_name(&self) -> &str {
+        if self.rust_name.is_empty() {
+            &self.name
+        } else {
+            &self.rust_name
+        }
+    }
+    
     /// Get the struct field name (for ToOne, this is derived from property name by stripping "Id" suffix)
     pub(crate) fn struct_field_name(&self) -> String {
         if self.type_field == OBXPropertyType_Relation {
@@ -276,10 +293,11 @@ impl ModelProperty {
             if let Some(ref relation_field) = self.relation_field {
                 return relation_field.clone();
             } else {
-                return self.name.strip_suffix("Id").unwrap_or(&self.name).to_string();
+                let base = self.rust_field_name();
+                return base.strip_suffix("Id").unwrap_or(base).to_string();
             }
         }
-        self.name.clone()
+        self.rust_field_name().to_string()
     }
 
     pub(crate) fn as_fluent_builder_invocation(&self) -> Tokens<Rust> {
@@ -326,19 +344,14 @@ impl ModelProperty {
     pub(crate) fn as_struct_property_default(&self) -> Tokens<Rust> {
         // For ToOne relations, use the original field name (e.g., "customer" not "customerId")
         if self.type_field == OBXPropertyType_Relation {
-            // Derive relation field from property name: "customerId" -> "customer"
-            let rel_field = if let Some(ref rf) = self.relation_field {
-                rf.clone()
-            } else {
-                self.name.strip_suffix("Id").unwrap_or(&self.name).to_string()
-            };
+            let rel_field = self.struct_field_name();
             let to_one = &rust::import("objectbox::relations", "ToOne");
             return quote! {
                 $rel_field: $to_one::new()
             };
         }
         
-        let name = &self.name;
+        let name = self.rust_field_name();
         
         // Для Optional полів завжди повертаємо None
         if self.is_optional() {
@@ -381,7 +394,7 @@ impl ModelProperty {
         let fuo = &rust::import("objectbox::flatbuffers", "ForwardsUOffset");
         let fvec = &rust::import("objectbox::flatbuffers", "Vector");
 
-        let name = &self.name;
+        let name = self.rust_field_name();
         // Handle ID property (check for ID flag bit, not exact flags value)
         if let Some(f) = self.flags {
             if (f & ob_consts::OBXPropertyFlags_ID) != 0 {
@@ -394,12 +407,7 @@ impl ModelProperty {
         
         // Handle ToOne relation - read target ID and initialize ToOne::with_id()
         if self.type_field == OBXPropertyType_Relation {
-            // Derive relation field from property name: "customerId" -> "customer"
-            let rel_field = if let Some(ref rf) = self.relation_field {
-                rf.clone()
-            } else {
-                self.name.strip_suffix("Id").unwrap_or(&self.name).to_string()
-            };
+            let rel_field = self.struct_field_name();
             let to_one = &rust::import("objectbox::relations", "ToOne");
             return quote! {
                 let target_id = table.get::<i64>($offset, Some(0)).unwrap() as u64;
@@ -407,7 +415,7 @@ impl ModelProperty {
             };
         }
 
-        let name = &self.name;
+        let name = self.rust_field_name();
         
         // Для Optional полів використовуємо .map() замість .unwrap()
         if self.is_optional() {
@@ -572,7 +580,7 @@ impl ModelProperty {
             &rust::import("objectbox::query::traits", "VecU8Blanket").with_module_alias("qtraits");
         let type_string =
             &rust::import("objectbox::query::traits", "StringBlanket").with_module_alias("qtraits");
-        let name = &self.name;
+        let name = self.rust_field_name();
         match self.type_field {
             ob_consts::OBXPropertyType_Double => quote! {
                 pub $name: Box<dyn $type_double<$entity_name>>,
@@ -616,7 +624,7 @@ impl ModelProperty {
         let ccb_fn = &rust::import("objectbox::query::traits", "create_condition_builder")
             .with_module_alias("qtraits");
 
-        let name = &self.name;
+        let name = self.rust_field_name();
         let property_id = &self.id.get_id();
 
         match self.type_field {
