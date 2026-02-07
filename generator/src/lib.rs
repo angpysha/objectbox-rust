@@ -191,13 +191,14 @@ impl EntityVecHelper for Vec<ModelEntity> {
     }
 
     fn assign_id_to_indexables(&mut self) -> &mut Self {
-        let mut counter: u64 = 1;
+        let mut counter: u64 = 0;
         let mut rng = rand::thread_rng();
         for e in self.as_mut_slice() {
             for p in e.properties.as_mut_slice() {
-                if p.index_id.is_some() {
-                    p.index_id = Some(format!("{}:{}", counter, rng.gen::<u64>()));
-                    counter += 1;
+                if let Some(ref idx_str) = p.index_id {
+                    let (idx_id, idx_uid) = parse_colon_separated_integers(idx_str, counter);
+                    counter = idx_id;
+                    p.index_id = Some(format!("{}:{}", idx_id, idx_uid));
                 }
             }
         }
@@ -277,8 +278,10 @@ pub fn generate_assets(out_path: &PathBuf, target_dir: &PathBuf) {
     }
 
     if model_has_changed {
-        json_dest_path.set_extension("json.new");
-        ob_dest_path.set_extension("rs.new");
+        // write to the same file and replace all contents
+        
+        // json_dest_path.set_extension("json.new");
+        // ob_dest_path.set_extension("rs.new");
     } else {
         // do relatively inexpensive(?) checks to prevent generating files,
         // and randomly generate uids and assign them

@@ -196,6 +196,11 @@
   - Аналог Dart `@Property(uid: ...)` + field name / `@ExternalName`
   - `rustName` field в objectbox-model.json для збереження Rust-імені коли воно відрізняється
   - Тести: `example/tests/renamed_fields.rs` (3 тести: put/get, put_many/get_all, update)
+- [x] Додати підтримку параметрів id/uid для index macro ✅ DONE (2026-02-07)
+  - `#[index(id = X, uid = Y)]` — вручну задати indexId для сумісності з Dart моделлю
+  - `#[unique(id = X, uid = Y)]` — аналогічно для unique indexes
+  - `assign_id_to_indexables` тепер використовує `parse_colon_separated_integers` (як entity/property IDs)
+  - Виправлено `lastIndexId` — тепер шукає максимальний indexId серед ВСІХ entities
 - [ ] Додати перевірку конфліктів атрибутів (`macros/src/entity.rs:9`)
 - [ ] Перевірити як працюють generics з entity macro (рядок 7)
 
@@ -671,4 +676,4 @@ class Document {
 ---
 
 *Документ оновлено з урахуванням аналізу ObjectBox Dart реалізації.*  
-*Останнє оновлення: 2026-02-07 (Property name mapping #13/#23, Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*
+*Останнє оновлення: 2026-02-07 (Index id/uid params #13, Property name mapping #13/#23, Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*

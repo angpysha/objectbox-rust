@@ -134,11 +134,14 @@ impl Property {
 
             // Track explicit index type from #[index(type = "hash"/"value"/"hash64")]
             let mut explicit_index_type: Option<String> = None;
+            // Track manual index id/uid from #[index(id = X, uid = Y)] or #[unique(id = X, uid = Y)]
+            let mut index_id_uid = id::IdUid::zero();
 
             // Attribute parsing
             for a in field.attrs.iter() {
                 // Track which attribute we're processing (for context-sensitive params)
                 let mut is_id_attr = false;
+                let mut is_index_or_unique_attr = false;
 
                 if let Some(attr_path_ident) = a.path.get_ident() {
                     let attr_name: &str = &attr_path_ident.to_string();
@@ -155,12 +158,14 @@ impl Property {
                             // and allow #[id(uid = Y)] shorthand.
                         }
                         "index" => {
+                            is_index_or_unique_attr = true;
                             // Just mark as indexed; actual index strategy flag (INDEXED vs
                             // INDEX_HASH) is applied after the loop based on field type.
                             // NOTE: #[index] does NOT imply UNIQUE (matches Dart behavior).
                             *index_id = Some("0:0".to_owned());
                         }
                         "unique" => {
+                            is_index_or_unique_attr = true;
                             // UNIQUE flag; index strategy applied after the loop.
                             *obx_property_flags |= consts::OBXPropertyFlags_UNIQUE;
                             *index_id = Some("0:0".to_owned());
@@ -185,7 +190,13 @@ impl Property {
                             meta_list.nested.into_iter().for_each(|nm| {
                                 match nm {
                                     syn::NestedMeta::Meta(syn::Meta::NameValue(mnv)) => {
-                                        id.update_from_scan(&mnv);
+                                        // Route id/uid to index_id_uid when inside #[index] or #[unique],
+                                        // otherwise to the property id.
+                                        if is_index_or_unique_attr {
+                                            index_id_uid.update_from_scan(&mnv);
+                                        } else {
+                                            id.update_from_scan(&mnv);
+                                        }
                                         let (pt, pf) = Self::scan_obx_property_type_and_flags(&mnv);
                                         if pt != 0 { *obx_property_type = pt; }
                                         *obx_property_flags |= pf;
@@ -230,6 +241,11 @@ impl Property {
                         _ => {}
                     }
                 }
+            }
+
+            // Apply manually specified index id/uid if provided
+            if index_id_uid.id != 0 || index_id_uid.uid != 0 {
+                *index_id = Some(index_id_uid.to_string());
             }
 
             // Apply index strategy flags based on field type (Dart-compatible behavior):

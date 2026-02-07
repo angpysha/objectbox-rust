@@ -44,22 +44,26 @@ impl ModelInfo {
         let last_entity = entities.last().unwrap(); // TODO remove unwrap, unpack result and return proper error
         let last_entity_id = last_entity.id.as_str();
 
-        let last_property_with_index_id = entities
-            .last()
-            .unwrap()
-            .properties
+        // Find the highest index ID across ALL entities (not just the last one)
+        let last_index_id = entities
             .iter()
-            .filter(|x| {
-                x.index_id.is_some()
-                    || (x.flags.unwrap_or_else(|| 0) & ob_consts::OBXPropertyFlags_ID) == 1
+            .flat_map(|e| e.properties.iter())
+            .filter_map(|p| p.index_id.as_ref())
+            .max_by_key(|idx_str| {
+                // Parse "id:uid" and sort by the numeric id part
+                idx_str.split(':').next()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0)
             })
-            .last()
-            .unwrap();
-        let last_index_id = if let Some(x) = &last_property_with_index_id.index_id {
-            x.to_string()
-        } else {
-            last_property_with_index_id.id.to_string()
-        };
+            .cloned()
+            .unwrap_or_else(|| {
+                // Fallback: use the last entity's ID property
+                let last = entities.last().unwrap();
+                last.properties.iter()
+                    .find(|p| (p.flags.unwrap_or(0) & ob_consts::OBXPropertyFlags_ID) != 0)
+                    .map(|p| p.id.clone())
+                    .unwrap_or_default()
+            });
         
         // Find last relation ID across all entities
         let last_relation_id = entities

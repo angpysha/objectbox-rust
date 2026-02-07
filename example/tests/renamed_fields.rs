@@ -28,6 +28,7 @@ fn test_renamed_fields_put_and_get() -> error::Result<()> {
     entity.item_count = 42;
     entity.is_active = true;
     entity.regular_field = 3.14;
+    entity.unique_code = "ABC-001".to_string();
 
     // Put and get back
     let id = box_.put(&mut entity)?;
@@ -41,6 +42,7 @@ fn test_renamed_fields_put_and_get() -> error::Result<()> {
     assert_eq!(retrieved.item_count, 42);
     assert_eq!(retrieved.is_active, true);
     assert_eq!(retrieved.regular_field, 3.14);
+    assert_eq!(retrieved.unique_code, "ABC-001");
 
     box_.remove_all()?;
     Ok(())

@@ -122,6 +122,8 @@ pub struct RenamedFieldsEntity {
     #[id]
     pub id: u64,
     /// In DB stored as "itemName" (camelCase), in Rust accessed as "item_name" (snake_case)
+    /// Index with manually specified id/uid (matching a Dart model)
+    #[index(id = 10, uid = 3650410481451669802)]
     #[property(name = "itemName")]
     pub item_name: String,
     /// In DB stored as "itemCount", in Rust accessed as "item_count"
@@ -132,4 +134,7 @@ pub struct RenamedFieldsEntity {
     pub is_active: bool,
     /// Property without rename — name is the same in Rust and DB
     pub regular_field: f64,
+    /// Unique with manually specified index id/uid
+    #[unique(id = 11, uid = 2230256660868146630)]
+    pub unique_code: String,
 }
