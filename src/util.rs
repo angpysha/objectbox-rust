@@ -14,9 +14,24 @@ pub type MutConstVoidPtr = *mut *const c_void;
 pub type ConstVoidPtr = *const c_void;
 pub type PtrConstChar = *const ::std::os::raw::c_char;
 
-// TODO verify correctness on all platforms
+/// Convert a Rust `&str` to a `CString`.
+/// The caller must keep the returned `CString` alive for as long as
+/// the pointer (obtained via `.as_ptr()`) is needed.
+pub(crate) fn to_c_string(s: &str) -> Option<CString> {
+    match CString::new(s) {
+        Ok(c_str) => Some(c_str),
+        Err(err) => {
+            eprintln!("CString conversion error: {err}");
+            None
+        }
+    }
+}
+
+/// DEPRECATED: This function returns a dangling pointer!
+/// The CString is dropped before the pointer can be used.
+/// Use `to_c_string()` instead and keep the CString alive.
+#[deprecated(note = "Returns dangling pointer. Use to_c_string() instead.")]
 pub(crate) fn as_c_char_ptr(s: &str) -> *const c_char {
-    // println!("as_c_char_ptr: {}", s);
     let out_path = String::from(s);
     match CString::new(out_path.as_str()) {
         Ok(c_str) => c_str.as_ptr() as *const c_char,

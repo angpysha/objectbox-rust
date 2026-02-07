@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use std::{
-    ffi::{CStr, CString},
+    ffi::CString,
     marker::PhantomData,
     rc::Rc,
 };
@@ -83,6 +83,8 @@ impl<T: OBBlanket> Builder<T> {
         self.property_id = c.get_property_id();
 
         use super::enums::ConditionOp;
+        use crate::util::to_c_string;
+
         unsafe {
             let result = match &c.op {
                 ConditionOp::IsNull => self.is_null(),
@@ -95,11 +97,28 @@ impl<T: OBBlanket> Builder<T> {
                     self.case_sensitive = *b;
                     QUERY_NO_OP
                 }
-                ConditionOp::Contains(s) => self.contains_string(s.as_c_char_ptr()),
-                ConditionOp::ContainsElement(s) => self.contains_element_string(s.as_c_char_ptr()),
-                ConditionOp::StartsWith(s) => self.starts_with_string(s.as_c_char_ptr()),
-                ConditionOp::EndsWith(s) => self.ends_with_string(s.as_c_char_ptr()),
-                ConditionOp::AnyEquals(s) => self.any_equals_string(s.as_c_char_ptr()),
+                // String operations: create CString at call site so it lives
+                // through the C function call (fixes dangling pointer bug)
+                ConditionOp::Contains(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.contains_string(c_str.as_ptr())
+                }
+                ConditionOp::ContainsElement(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.contains_element_string(c_str.as_ptr())
+                }
+                ConditionOp::StartsWith(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.starts_with_string(c_str.as_ptr())
+                }
+                ConditionOp::EndsWith(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.ends_with_string(c_str.as_ptr())
+                }
+                ConditionOp::AnyEquals(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.any_equals_string(c_str.as_ptr())
+                }
                 ConditionOp::Eq_i64(i) => self.equals_int(*i),
                 ConditionOp::Ne_i64(i) => self.not_equals_int(*i),
                 ConditionOp::Lt_i64(i) => self.less_than_int(*i),
@@ -110,12 +129,30 @@ impl<T: OBBlanket> Builder<T> {
                 ConditionOp::Gt_f64(f) => self.greater_than_double(*f),
                 ConditionOp::Le_f64(f) => self.less_or_equal_double(*f),
                 ConditionOp::Ge_f64(f) => self.greater_or_equal_double(*f),
-                ConditionOp::Eq_string(s) => self.equals_string(s.as_c_char_ptr()),
-                ConditionOp::Ne_string(s) => self.not_equals_string(s.as_c_char_ptr()),
-                ConditionOp::Lt_string(s) => self.less_than_string(s.as_c_char_ptr()),
-                ConditionOp::Gt_string(s) => self.greater_than_string(s.as_c_char_ptr()),
-                ConditionOp::Le_string(s) => self.less_or_equal_string(s.as_c_char_ptr()),
-                ConditionOp::Ge_string(s) => self.greater_or_equal_string(s.as_c_char_ptr()),
+                ConditionOp::Eq_string(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.equals_string(c_str.as_ptr())
+                }
+                ConditionOp::Ne_string(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.not_equals_string(c_str.as_ptr())
+                }
+                ConditionOp::Lt_string(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.less_than_string(c_str.as_ptr())
+                }
+                ConditionOp::Gt_string(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.greater_than_string(c_str.as_ptr())
+                }
+                ConditionOp::Le_string(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.less_or_equal_string(c_str.as_ptr())
+                }
+                ConditionOp::Ge_string(s) => {
+                    let c_str = to_c_string(s).unwrap();
+                    self.greater_or_equal_string(c_str.as_ptr())
+                }
                 ConditionOp::All => {
                     self.get_group_integer(c,  |ptr, len| self.all(ptr, len))
                 }
@@ -123,7 +160,9 @@ impl<T: OBBlanket> Builder<T> {
                     self.get_group_integer(c,  |ptr, len| self.any(ptr, len))
                 }
                 ConditionOp::ContainsKeyValue(k, v) => {
-                    self.contains_key_value_string(k.as_c_char_ptr(), v.as_c_char_ptr())
+                    let c_key = to_c_string(k).unwrap();
+                    let c_val = to_c_string(v).unwrap();
+                    self.contains_key_value_string(c_key.as_ptr(), c_val.as_ptr())
                 }
                 ConditionOp::Eq_vecu8(vec_u8) => {
                     let (ptr, len) = vec_u8.as_ptr_and_length_tuple::<u8>();
@@ -164,30 +203,18 @@ impl<T: OBBlanket> Builder<T> {
                     self.not_in_int64s(ptr, len)
                 }
                 ConditionOp::In_String(strs) => {
-                    let mut new_strings = Vec::<String>::new();
-                    for s in strs {
-                        let mut new_string = String::new();
-                        new_string.push_str(s.as_str());
-                        new_string.push('\0');
-                        new_strings.push(new_string);
-                        if let Err(_) = CString::new(s.as_bytes()) {
-                            // TODO bring back self.error? or leave string validation to user?
-                            // TODO validate strings outside function
-                            // error::Error::new_local(&format!(
-                            //     "Bad string conversion (in_strings: {})",
-                            //     err.to_string()
-                            // ))?;
-                            return QUERY_NO_OP;
-                        }
-                    }
-                    let vec: Vec<_> = new_strings
+                    // Convert all strings to CStrings, keeping them alive
+                    let c_strings: Vec<CString> = match strs
                         .iter()
-                        // TODO rewrite the unwrap
-                        .map(|s| CString::new(s.as_bytes()).unwrap())
-                        .collect();
-                    let cstrs: Vec<&CStr> = vec.iter().map(|c| c.as_c_str()).collect();
-                    let (ptr, len) = cstrs.as_ptr_and_length_tuple();
-                    self.in_strings(ptr, len)
+                        .map(|s| CString::new(s.as_bytes()))
+                        .collect::<Result<Vec<_>, _>>() {
+                        Ok(v) => v,
+                        Err(_) => return QUERY_NO_OP,
+                    };
+                    // Build array of pointers to the CStrings
+                    let ptrs: Vec<*const std::os::raw::c_char> =
+                        c_strings.iter().map(|c| c.as_ptr()).collect();
+                    self.in_strings(ptrs.as_ptr() as *const PtrConstChar, ptrs.len())
                 }
                 ConditionOp::NoOp => QUERY_NO_OP,
             };

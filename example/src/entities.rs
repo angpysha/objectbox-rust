@@ -4,10 +4,11 @@ use objectbox::macros::entity;
 use objectbox::relations::{ToOne, ToMany};
 
 #[derive(Debug)]
-#[entity]
+#[entity(id = 4, uid = 12469918787009386704)]
 pub struct Entity3 {
-    #[id]
+    #[id(uid = 15234086132445654169)]
     pub id: u64,
+    #[property(id = 2, uid = 17547540590170066926)]
     pub hello: String,
 }
 
@@ -68,11 +69,13 @@ pub struct EntityWithOptionals {
 /// Customer entity for testing ToOne relations
 /// (must be defined before Order which references it)
 #[derive(Debug)]
-#[entity]
+#[entity(id = 1, uid = 8476576275622108635)]
 pub struct Customer {
-    #[id]
+    #[id(uid = 16031606834929606574)]
     pub id: u64,
+    #[property(id = 2, uid = 10366521659228310164)]
     pub name: String,
+    #[property(id = 3, uid = 17074053082311592179)]
     pub email: String,
 }
 

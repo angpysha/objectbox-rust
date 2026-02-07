@@ -125,7 +125,9 @@ impl Property {
                             *obx_property_flags |= consts::OBXPropertyFlags_ID_SELF_ASSIGNABLE
                                 | consts::OBXPropertyFlags_ID;
                             *rust_type = "u64".to_string();
-                            return Some(ParsedField::Property(property));
+                            // Don't return early: allow further attributes (e.g.
+                            // #[property(id = X, uid = Y)]) to set schema IDs,
+                            // and allow #[id(uid = Y)] shorthand.
                         }
                         "index" => {
                             *obx_property_flags |=
@@ -148,16 +150,18 @@ impl Property {
                     match m {
                         syn::Meta::NameValue(mnv) => {
                             id.update_from_scan(&mnv);
-                            (*obx_property_type, *obx_property_flags) =
-                                Self::scan_obx_property_type_and_flags(&mnv);
+                            let (pt, pf) = Self::scan_obx_property_type_and_flags(&mnv);
+                            if pt != 0 { *obx_property_type = pt; }
+                            *obx_property_flags |= pf;
                         }
                         syn::Meta::List(meta_list) => {
                             meta_list.nested.into_iter().for_each(|nm| {
                                 if let syn::NestedMeta::Meta(meta) = nm {
                                     if let syn::Meta::NameValue(mnv) = meta {
                                         id.update_from_scan(&mnv);
-                                        (*obx_property_type, *obx_property_flags) =
-                                            Self::scan_obx_property_type_and_flags(&mnv);
+                                        let (pt, pf) = Self::scan_obx_property_type_and_flags(&mnv);
+                                        if pt != 0 { *obx_property_type = pt; }
+                                        *obx_property_flags |= pf;
                                     }
                                 }
                             });
@@ -167,7 +171,13 @@ impl Property {
                 }
             }
 
-            // Parse the type
+            // If type was already determined by an attribute (e.g. #[id]),
+            // skip type detection from the Rust type path
+            if *obx_property_type != 0 {
+                return Some(ParsedField::Property(property));
+            }
+
+            // Parse the type from the Rust type path
             let idents = get_idents_from_path(&field.ty);
             if idents.is_empty() {
                 return None;

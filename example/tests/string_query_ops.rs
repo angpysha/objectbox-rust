@@ -1,5 +1,5 @@
 use example::{
-    make_factory_map, make_model, new_entity3_condition_factory, Entity, Entity2, Entity3,
+    make_factory_map, make_model, new_entity3_condition_factory, Entity3,
     Entity3ConditionFactory,
 };
 use objectbox::{error, opt::Opt, query::condition::Condition, store::Store};
@@ -7,21 +7,37 @@ use objectbox::{error, opt::Opt, query::condition::Condition, store::Store};
 use serial_test::serial;
 
 trait TesterExt {
-    fn given_condition_count(&mut self, c: &mut Condition<Entity3>, i: usize) -> error::Result<()>;
+    fn given_condition_count(
+        &mut self,
+        c: &mut Condition<Entity3>,
+        expected: usize,
+        label: &str,
+    ) -> error::Result<()>;
 }
 
 impl TesterExt for objectbox::r#box::Box<'_, Entity3> {
-    fn given_condition_count(&mut self, c: &mut Condition<Entity3>, i: usize) -> error::Result<()> {
-        let q2 = self.query(c)?;
-        let found_list = q2.find()?;
-        assert_eq!(i, found_list.len());
+    fn given_condition_count(
+        &mut self,
+        c: &mut Condition<Entity3>,
+        expected: usize,
+        label: &str,
+    ) -> error::Result<()> {
+        let q = self.query(c)?;
+        let count = q.count()?;
+        let found_list = q.find()?;
+        assert_eq!(
+            expected,
+            found_list.len(),
+            "Failed for: {label} (count={count}, find={})",
+            found_list.len()
+        );
         Ok(())
     }
 }
 
 #[test]
 #[serial]
-fn string_query_tests() -> error::Result<()> {
+fn string_contains_tests() -> error::Result<()> {
     let mut model = make_model();
     let opt = Opt::from_model(&mut model)?;
     let trait_map = make_factory_map();
@@ -29,92 +45,338 @@ fn string_query_tests() -> error::Result<()> {
 
     let mut box3 = store.get_box::<Entity3>()?;
     box3.remove_all()?;
-    let mut box2 = store.get_box::<Entity2>()?;
-    box2.remove_all()?;
-    let mut box1 = store.get_box::<Entity>()?;
-    box1.remove_all()?;
 
-    // query builder, query condition, case sensitivity
-    {
-        let mut first = Entity3 {
-            id: 1,
-            hello: "world".to_string(),
-        };
-        let mut second = Entity3 {
-            id: 2,
-            hello: "real world".to_string(),
-        };
-        let mut third = Entity3 {
-            id: 3,
-            hello: "REAL world".to_string(),
-        };
-        let _ = box3.put(&mut first);
-        let _ = box3.put(&mut second);
-        let _ = box3.put(&mut third);
-        let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
+    let mut first = Entity3 {
+        id: 0,
+        hello: "world".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "real world".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "REAL world".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
 
-        // TODO FIXME: there's something clearly wrong here,
-        // TODO maybe something with how spaces in &str are handled in rust
-        // let mut c = hello.case_sensitive(true).and(hello.contains("real world"));
-        // let q = box3.query(&mut c)?;
-        // let found_list = q.find()?;
-        // assert_eq!(2, found_list.len());
-        // assert_eq!(first.hello, found_list[0].hello);
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
 
-        // TODO FIXME: also broken
-        // let mut c2 = hello.case_sensitive(true).and(hello.contains("real"));
-        // let q2 = box3.query(&mut c2)?;
-        // let found_list2 = q2.find()?;
-        // assert_eq!(1, found_list2.len());
+    // contains "world" - all 3 have "world" (case insensitive by default)
+    let mut c = hello.contains("world");
+    box3.given_condition_count(&mut c, 3, "contains(world)")?;
 
-        // TODO FIXME: broken
-        // let mut c3 = hello.case_sensitive(true).and(hello.in_strings(&vec!["world".to_string(), "does not exist".to_string(),]));
-        // box3.given_condition_count(&mut c3, 1)?;
-        // TODO FIXME: broken
-        // let mut c4 = hello.any_equals("world");
-        // box3.given_condition_count(&mut c4, 1)?;
+    // contains "real" case-insensitive (default) - "real world" and "REAL world"
+    let mut c = hello.contains("real");
+    box3.given_condition_count(&mut c, 2, "contains(real)")?;
 
-        let mut c5 = hello.contains("world");
-        box3.given_condition_count(&mut c5, 3)?;
+    // contains "xyz" - no match
+    let mut c = hello.contains("xyz");
+    box3.given_condition_count(&mut c, 0, "contains(xyz)")?;
 
-        // TODO FIX LOGIC or implementation, always return 3
-        // let mut c5_2 = hello.case_sensitive(false) & hello.contains("real");
-        // box3.given_condition_count(&mut c5_2, 2);
+    Ok(())
+}
 
-        // let mut c6 = hello.contains_element("test");
-        // let mut c7 = hello.contains_key_value("meh", "bleh");
+#[test]
+#[serial]
+fn string_starts_with_tests() -> error::Result<()> {
+    let mut model = make_model();
+    let opt = Opt::from_model(&mut model)?;
+    let trait_map = make_factory_map();
+    let store = Store::new(opt, trait_map)?;
 
-        let mut c8 = hello.ends_with("d");
-        box3.given_condition_count(&mut c8, 3)?;
+    let mut box3 = store.get_box::<Entity3>()?;
+    box3.remove_all()?;
 
-        // TODO FIX LOGIC or implementation, always returns 3
-        // let mut c8_2 = hello.ends_with(" world");
-        // box3.given_condition_count(&mut c8_2, 2);
+    let mut first = Entity3 {
+        id: 0,
+        hello: "world".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "real world".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "REAL world".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
 
-        // TODO FIX LOGIC or implementation, always returns 3
-        // let mut c9_1 = hello.case_sensitive(true) & hello.starts_with("h");
-        // let mut c9_2 = hello.starts_with("H");
-        // let mut c9_3 = hello.starts_with("w");
-        // box3.given_condition_count(&mut c9_1, 1)?;
-        // box3.given_condition_count(&mut c9_2, 1)?;
-        // box3.given_condition_count(&mut c9_3, 1)?;
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
 
-        // TODO FIX LOGIC or implementation, always returns 3
-        // let mut ca = hello.in_strings(&vec!["ea".to_string()]);
-        // box3.given_condition_count(&mut ca, 3);
-        // let mut cb = hello.eq("world".to_string());
-        // box3.given_condition_count(&mut cb, 1)?;
-        let mut cc = hello.ne("a".to_string());
-        box3.given_condition_count(&mut cc, 3)?;
-        // let mut cd = hello.lt("a".to_string());
-        // box3.given_condition_count(&mut cd, 0)?;
-        // let mut ce = hello.le("a".to_string());
-        // box3.given_condition_count(&mut ce, 0)?;
-        // let mut cf = hello.ge("a".to_string());
-        // box3.given_condition_count(&mut cf, 0)?;
-        // let mut d0 = hello.gt("a".to_string());
-        // box3.given_condition_count(&mut d0, 0)?;
-    }
+    // starts_with "w" - only "world"
+    let mut c = hello.starts_with("w");
+    box3.given_condition_count(&mut c, 1, "starts_with(w)")?;
+
+    // starts_with "real" - "real world" and "REAL world" (case insensitive)
+    let mut c = hello.starts_with("real");
+    box3.given_condition_count(&mut c, 2, "starts_with(real)")?;
+
+    // starts_with "xyz" - no match
+    let mut c = hello.starts_with("xyz");
+    box3.given_condition_count(&mut c, 0, "starts_with(xyz)")?;
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn string_ends_with_tests() -> error::Result<()> {
+    let mut model = make_model();
+    let opt = Opt::from_model(&mut model)?;
+    let trait_map = make_factory_map();
+    let store = Store::new(opt, trait_map)?;
+
+    let mut box3 = store.get_box::<Entity3>()?;
+    box3.remove_all()?;
+
+    let mut first = Entity3 {
+        id: 0,
+        hello: "world".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "real world".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "REAL world".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
+
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
+
+    // ends_with "d" - all 3 end with "d"
+    let mut c = hello.ends_with("d");
+    box3.given_condition_count(&mut c, 3, "ends_with(d)")?;
+
+    // ends_with " world" - "real world" and "REAL world"
+    let mut c = hello.ends_with(" world");
+    box3.given_condition_count(&mut c, 2, "ends_with( world)")?;
+
+    // ends_with "xyz" - no match
+    let mut c = hello.ends_with("xyz");
+    box3.given_condition_count(&mut c, 0, "ends_with(xyz)")?;
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn string_eq_ne_tests() -> error::Result<()> {
+    let mut model = make_model();
+    let opt = Opt::from_model(&mut model)?;
+    let trait_map = make_factory_map();
+    let store = Store::new(opt, trait_map)?;
+
+    let mut box3 = store.get_box::<Entity3>()?;
+    box3.remove_all()?;
+
+    let mut first = Entity3 {
+        id: 0,
+        hello: "world".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "real world".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "REAL world".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
+
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
+
+    // eq "world" - exact match (case insensitive by default)
+    let mut c = hello.eq("world".to_string());
+    box3.given_condition_count(&mut c, 1, "eq(world)")?;
+
+    // eq "real world" - case insensitive matches both cases
+    let mut c = hello.eq("real world".to_string());
+    box3.given_condition_count(&mut c, 2, "eq(real world)")?;
+
+    // ne "world" - not "world" -> 2 results
+    let mut c = hello.ne("world".to_string());
+    box3.given_condition_count(&mut c, 2, "ne(world)")?;
+
+    // ne "a" - none equal "a", so all 3
+    let mut c = hello.ne("a".to_string());
+    box3.given_condition_count(&mut c, 3, "ne(a)")?;
+
+    // eq "nonexistent" - 0
+    let mut c = hello.eq("nonexistent".to_string());
+    box3.given_condition_count(&mut c, 0, "eq(nonexistent)")?;
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn string_comparison_tests() -> error::Result<()> {
+    let mut model = make_model();
+    let opt = Opt::from_model(&mut model)?;
+    let trait_map = make_factory_map();
+    let store = Store::new(opt, trait_map)?;
+
+    let mut box3 = store.get_box::<Entity3>()?;
+    box3.remove_all()?;
+
+    let mut first = Entity3 {
+        id: 0,
+        hello: "apple".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "banana".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "cherry".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
+
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
+
+    // lt "banana" - only "apple"
+    let mut c = hello.lt("banana".to_string());
+    box3.given_condition_count(&mut c, 1, "lt(banana)")?;
+
+    // le "banana" - "apple" and "banana"
+    let mut c = hello.le("banana".to_string());
+    box3.given_condition_count(&mut c, 2, "le(banana)")?;
+
+    // gt "banana" - only "cherry"
+    let mut c = hello.gt("banana".to_string());
+    box3.given_condition_count(&mut c, 1, "gt(banana)")?;
+
+    // ge "banana" - "banana" and "cherry"
+    let mut c = hello.ge("banana".to_string());
+    box3.given_condition_count(&mut c, 2, "ge(banana)")?;
+
+    // lt "a" - nothing less than "a"
+    let mut c = hello.lt("a".to_string());
+    box3.given_condition_count(&mut c, 0, "lt(a)")?;
+
+    // gt "z" - nothing greater than "z"
+    let mut c = hello.gt("z".to_string());
+    box3.given_condition_count(&mut c, 0, "gt(z)")?;
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn string_in_strings_tests() -> error::Result<()> {
+    let mut model = make_model();
+    let opt = Opt::from_model(&mut model)?;
+    let trait_map = make_factory_map();
+    let store = Store::new(opt, trait_map)?;
+
+    let mut box3 = store.get_box::<Entity3>()?;
+    box3.remove_all()?;
+
+    let mut first = Entity3 {
+        id: 0,
+        hello: "world".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "real world".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "REAL world".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
+
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
+
+    // in_strings with one match
+    let mut c = hello.in_strings(&vec![
+        "world".to_string(),
+        "does not exist".to_string(),
+    ]);
+    box3.given_condition_count(&mut c, 1, "in_strings(world, dne)")?;
+
+    // in_strings with two matches (case insensitive: "real world" matches both)
+    let mut c = hello.in_strings(&vec![
+        "real world".to_string(),
+    ]);
+    box3.given_condition_count(&mut c, 2, "in_strings(real world)")?;
+
+    // in_strings with no matches
+    let mut c = hello.in_strings(&vec![
+        "nonexistent".to_string(),
+    ]);
+    box3.given_condition_count(&mut c, 0, "in_strings(nonexistent)")?;
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn string_case_sensitive_tests() -> error::Result<()> {
+    let mut model = make_model();
+    let opt = Opt::from_model(&mut model)?;
+    let trait_map = make_factory_map();
+    let store = Store::new(opt, trait_map)?;
+
+    let mut box3 = store.get_box::<Entity3>()?;
+    box3.remove_all()?;
+
+    let mut first = Entity3 {
+        id: 0,
+        hello: "world".to_string(),
+    };
+    let mut second = Entity3 {
+        id: 0,
+        hello: "real world".to_string(),
+    };
+    let mut third = Entity3 {
+        id: 0,
+        hello: "REAL world".to_string(),
+    };
+    box3.put(&mut first)?;
+    box3.put(&mut second)?;
+    box3.put(&mut third)?;
+
+    let Entity3ConditionFactory { hello, .. } = new_entity3_condition_factory();
+
+    // case_sensitive(true) + contains("real") should match only "real world" (not "REAL world")
+    let mut c = hello.case_sensitive(true).and(hello.contains("real"));
+    box3.given_condition_count(&mut c, 1, "case_sensitive+contains(real)")?;
+
+    // case_sensitive(true) + contains("REAL") should match only "REAL world"
+    let mut c = hello.case_sensitive(true).and(hello.contains("REAL"));
+    box3.given_condition_count(&mut c, 1, "case_sensitive+contains(REAL)")?;
+
+    // case_sensitive(true) + starts_with("REAL") - only "REAL world"
+    let mut c = hello.case_sensitive(true).and(hello.starts_with("REAL"));
+    box3.given_condition_count(&mut c, 1, "case_sensitive+starts_with(REAL)")?;
+
+    // case_sensitive(true) + eq("world") - exact case match
+    let mut c = hello.case_sensitive(true).and(hello.eq("world".to_string()));
+    box3.given_condition_count(&mut c, 1, "case_sensitive+eq(world)")?;
+
+    // case_sensitive(true) + in_strings with "world" - exact case match
+    let mut c = hello.case_sensitive(true).and(hello.in_strings(&vec![
+        "world".to_string(),
+        "does not exist".to_string(),
+    ]));
+    box3.given_condition_count(&mut c, 1, "case_sensitive+in_strings(world)")?;
 
     Ok(())
 }

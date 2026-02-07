@@ -203,15 +203,20 @@ impl<T: OBBlanket> Query<T> {
 
     // TODO write test
     pub fn find_ids(&self) -> error::Result<Vec<c::obx_id>> {
-        let mut vec = Vec::new();
         unsafe {
             let cursor = Cursor::new(false, self.obx_store, self.helper.clone())?;
             let c_id_array = self.cursor_find_ids(&mut *cursor.obx_cursor);
-            // TODO error check tx, cursor, with get_result_from_ptr
+            if c_id_array.is_null() {
+                return Err(error::Error::new_local("find_ids: null pointer returned from query"));
+            }
             let c = &*c_id_array;
             let len = c.count;
             let ptr = c.ids;
+            if len == 0 || ptr.is_null() {
+                return Ok(Vec::new());
+            }
             let sl = slice::from_raw_parts(ptr, len);
+            let mut vec = Vec::new();
             vec.extend(sl);
             get_result_from_ptr(ptr, vec)
         }

@@ -1,0 +1,1184 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:2630359953599613731",
+      "lastPropertyId": "6:3588295357350672315",
+      "name": "ObjectBoxApiEndpointInfo",
+      "properties": [
+        {
+          "id": "1:4453425351499750065",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5434481268092252410",
+          "name": "itemId",
+          "indexId": "1:8550266908013427179",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:7385271794676691466",
+          "name": "serviceName",
+          "type": 9
+        },
+        {
+          "id": "4:1370504139249760592",
+          "name": "path",
+          "type": 9
+        },
+        {
+          "id": "5:2896314109083289304",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "6:3588295357350672315",
+          "name": "useStagingSlot",
+          "type": 1
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "2:7191785139984308598",
+      "lastPropertyId": "5:3484302145721111574",
+      "name": "ObjectBoxSyncInfo",
+      "properties": [
+        {
+          "id": "1:8817290202132591810",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2551403318829405234",
+          "name": "itemId",
+          "indexId": "2:5638230857135275368",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:1345785692977413994",
+          "name": "tableName",
+          "type": 9
+        },
+        {
+          "id": "5:3484302145721111574",
+          "name": "dbLastSync",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "3:1740597241367992876",
+      "lastPropertyId": "10:1176784638140069920",
+      "name": "ObjectBoxSettingsItemEvent",
+      "properties": [
+        {
+          "id": "1:4816545734076029029",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4849327763717637700",
+          "name": "userId",
+          "type": 9
+        },
+        {
+          "id": "3:5861101715750097610",
+          "name": "eventId",
+          "indexId": "3:7857774237913522177",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:8843372868153844975",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "6:6739640074919926833",
+          "name": "key",
+          "type": 9
+        },
+        {
+          "id": "7:2102899974016394538",
+          "name": "value",
+          "type": 9
+        },
+        {
+          "id": "8:2999631339737386282",
+          "name": "itemId",
+          "type": 9
+        },
+        {
+          "id": "9:7106760574885026152",
+          "name": "dataType",
+          "type": 6
+        },
+        {
+          "id": "10:1176784638140069920",
+          "name": "dbCreatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "4:2120779419503232523",
+      "lastPropertyId": "10:7415731127738739695",
+      "name": "ObjectBoxSettingsItemProjectionLocal",
+      "properties": [
+        {
+          "id": "1:7226943142291968374",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8311751292692899071",
+          "name": "itemId",
+          "indexId": "4:8079139360919647816",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:7005373615708721570",
+          "name": "userId",
+          "type": 9
+        },
+        {
+          "id": "4:5914017985964766096",
+          "name": "key",
+          "type": 9
+        },
+        {
+          "id": "5:4756995606329811129",
+          "name": "value",
+          "type": 9
+        },
+        {
+          "id": "6:5518047764282200384",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "9:7154243201623029140",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "10:7415731127738739695",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "5:2511351372105468635",
+      "lastPropertyId": "10:2748383293246860243",
+      "name": "ObjectBoxSettingsItemProjectionRemote",
+      "properties": [
+        {
+          "id": "1:3475277648012525586",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4493348637094179469",
+          "name": "itemId",
+          "indexId": "5:3087526861886786465",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:8307914198480342969",
+          "name": "userId",
+          "type": 9
+        },
+        {
+          "id": "4:6301028390876557922",
+          "name": "key",
+          "type": 9
+        },
+        {
+          "id": "5:1409835238285487935",
+          "name": "value",
+          "type": 9
+        },
+        {
+          "id": "6:4229983157430130522",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "9:4308400301184885462",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "10:2748383293246860243",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "9:3938403512596886532",
+      "lastPropertyId": "6:6262428141169757152",
+      "name": "ObjectBoxCategoryEvent",
+      "properties": [
+        {
+          "id": "1:8558458132999450795",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4902875984937234597",
+          "name": "itemId",
+          "indexId": "10:3650410481451669802",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:7974436597780523659",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "4:4500126086793893233",
+          "name": "dataId",
+          "indexId": "11:2230256660868146630",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectboxCategoryEventData"
+        },
+        {
+          "id": "6:6262428141169757152",
+          "name": "dbCreatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "10:5986115565361495558",
+      "lastPropertyId": "4:5793803849018265612",
+      "name": "ObjectboxCategoryEventData",
+      "properties": [
+        {
+          "id": "1:6964338335592692123",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7278034752005443281",
+          "name": "itemId",
+          "indexId": "12:827862444130034634",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2982785360766867123",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:5793803849018265612",
+          "name": "color",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "11:8864100659871982014",
+      "lastPropertyId": "8:6829612828314617670",
+      "name": "ObjectBoxCategoryProjectionLocal",
+      "properties": [
+        {
+          "id": "1:3341030294872485261",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:1759240545852531993",
+          "name": "itemId",
+          "indexId": "13:2589315415503984582",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:3767368964059978570",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:2410388298713151202",
+          "name": "color",
+          "type": 6
+        },
+        {
+          "id": "7:7116583707229897585",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "8:6829612828314617670",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "12:6574733845109482723",
+      "lastPropertyId": "8:183581796884700008",
+      "name": "ObjectBoxCategoryProjectionRemote",
+      "properties": [
+        {
+          "id": "1:8752604972991188337",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:3111767078687451224",
+          "name": "itemId",
+          "indexId": "14:448394374427012814",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:8055294036575290223",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:386018018497440477",
+          "name": "color",
+          "type": 6
+        },
+        {
+          "id": "7:5326821807733032640",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "8:183581796884700008",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "13:2126870556306869823",
+      "lastPropertyId": "25:1136739104923724077",
+      "name": "ObjectBoxJobItemProjectionLocal",
+      "properties": [
+        {
+          "id": "1:5467059313827175309",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8197256055655434596",
+          "name": "itemId",
+          "indexId": "15:3996495048510997068",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:6802292016640187258",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:7692510847504574136",
+          "name": "status",
+          "type": 6
+        },
+        {
+          "id": "5:7201766258386849731",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "6:7501881568862655458",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "9:7844360096346448190",
+          "name": "isPinned",
+          "type": 1
+        },
+        {
+          "id": "10:6837907676278838458",
+          "name": "isArchived",
+          "type": 1
+        },
+        {
+          "id": "11:506980770092840863",
+          "name": "deadlineHasTime",
+          "type": 1
+        },
+        {
+          "id": "12:5553958139469786643",
+          "name": "categoryId",
+          "indexId": "16:7915236621158303738",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectBoxCategoryProjectionLocal"
+        },
+        {
+          "id": "13:1314943668549883010",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "17:2101939935884104666",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "18:185442359532991679",
+          "name": "dbUpdatedAt",
+          "type": 6
+        },
+        {
+          "id": "19:7965658718908113812",
+          "name": "dbDeadline",
+          "type": 6
+        },
+        {
+          "id": "20:7995442392643073960",
+          "name": "dbRemindDate",
+          "type": 6
+        },
+        {
+          "id": "21:713823762769788998",
+          "name": "dbCompletedAt",
+          "type": 6
+        },
+        {
+          "id": "22:1084811866070217251",
+          "name": "source",
+          "type": 6
+        },
+        {
+          "id": "24:7708482911361889299",
+          "name": "seriesId",
+          "type": 9
+        },
+        {
+          "id": "25:1136739104923724077",
+          "name": "repeatInfoId",
+          "indexId": "33:1861045201820680624",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectBoxJobRepeatInfo"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "14:6811872273626231341",
+      "lastPropertyId": "21:4546133304484742247",
+      "name": "ObjectBoxJobItemProjectionRemote",
+      "properties": [
+        {
+          "id": "1:5668545918447958691",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4112090508584462972",
+          "name": "itemId",
+          "indexId": "17:7334061159706747826",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:1366240700596923862",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:5154284200984945800",
+          "name": "status",
+          "type": 6
+        },
+        {
+          "id": "5:6554795437634592238",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "6:3911381867420692548",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "9:3901088358299266432",
+          "name": "isPinned",
+          "type": 1
+        },
+        {
+          "id": "10:1521713299414836092",
+          "name": "isArchived",
+          "type": 1
+        },
+        {
+          "id": "11:1593964570911414224",
+          "name": "deadlineHasTime",
+          "type": 1
+        },
+        {
+          "id": "12:2499351260994103590",
+          "name": "categoryId",
+          "indexId": "18:7179017920828252872",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectBoxCategoryProjectionRemote"
+        },
+        {
+          "id": "13:6261791361837598163",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "17:608190584516268000",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "18:571171659149287347",
+          "name": "dbUpdatedAt",
+          "type": 6
+        },
+        {
+          "id": "19:9002993530153105730",
+          "name": "dbDeadline",
+          "type": 6
+        },
+        {
+          "id": "20:8793192340567130674",
+          "name": "dbRemindDate",
+          "type": 6
+        },
+        {
+          "id": "21:4546133304484742247",
+          "name": "dbCompletedAt",
+          "type": 6
+        }
+      ],
+      "relations": [
+        {
+          "id": "6:6948234381616063995",
+          "name": "subitems",
+          "targetId": "16:5008298125406041918"
+        }
+      ]
+    },
+    {
+      "id": "15:7956926898435817656",
+      "lastPropertyId": "10:7292565396846228200",
+      "name": "ObjectboxJobsubitemProjectionLocal",
+      "properties": [
+        {
+          "id": "1:4438598062954513733",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:6254608970903482686",
+          "name": "itemId",
+          "indexId": "19:2507415446950682772",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:2699189884205746405",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:6110675711925069247",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "5:5845609542287725122",
+          "name": "status",
+          "type": 6
+        },
+        {
+          "id": "8:2365905758754866756",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "9:4420242211776152390",
+          "name": "dbUpdatedAt",
+          "type": 6
+        },
+        {
+          "id": "10:7292565396846228200",
+          "name": "jobItemId",
+          "indexId": "31:569711813824200454",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectBoxJobItemProjectionLocal"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "16:5008298125406041918",
+      "lastPropertyId": "9:8968319336400346578",
+      "name": "ObjectboxJobsubitemProjectionRemote",
+      "properties": [
+        {
+          "id": "1:6321423301032428522",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5901387936472983288",
+          "name": "itemId",
+          "indexId": "20:5004638805655069108",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:8097021341382599423",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:4671393311084339602",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "5:7289871217113669771",
+          "name": "status",
+          "type": 6
+        },
+        {
+          "id": "8:2013670606320710902",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "9:8968319336400346578",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "17:4715060664192193890",
+      "lastPropertyId": "6:1102577110988811173",
+      "name": "ObjectBoxJobItemEvent",
+      "properties": [
+        {
+          "id": "1:82593848741610658",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2035238022792701198",
+          "name": "itemId",
+          "indexId": "21:6179534382933599631",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:1739616566989054505",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "5:4672800143169337701",
+          "name": "dataId",
+          "indexId": "22:1240247377713263438",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectBoxJobItemEventData"
+        },
+        {
+          "id": "6:1102577110988811173",
+          "name": "dbCreatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "18:4390264021034916220",
+      "lastPropertyId": "25:2665646489480294726",
+      "name": "ObjectBoxJobItemEventData",
+      "properties": [
+        {
+          "id": "1:1284627840530956494",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2147141499744148848",
+          "name": "itemId",
+          "indexId": "23:978055940881390531",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:8368126265604463596",
+          "name": "eventType",
+          "type": 6
+        },
+        {
+          "id": "4:3652282368394762705",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "5:2280643038147178085",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "6:5625425566095059477",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "9:1124766328258969936",
+          "name": "categoryId",
+          "type": 9
+        },
+        {
+          "id": "10:7691052455275530743",
+          "name": "deadlineHasTime",
+          "type": 1
+        },
+        {
+          "id": "11:8771777345156277376",
+          "name": "status",
+          "type": 6
+        },
+        {
+          "id": "13:1359978735071730391",
+          "name": "isPinned",
+          "type": 1
+        },
+        {
+          "id": "14:863679948706327193",
+          "name": "isArchived",
+          "type": 1
+        },
+        {
+          "id": "15:8809766899562020778",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "19:1451688480508452702",
+          "name": "dbDeadline",
+          "type": 6
+        },
+        {
+          "id": "20:5239733489422340456",
+          "name": "dbRemindDate",
+          "type": 6
+        },
+        {
+          "id": "21:7106284103845932902",
+          "name": "dbCompletedAt",
+          "type": 6
+        },
+        {
+          "id": "22:5872546061312640571",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "23:8981415338364879827",
+          "name": "dbUpdatedAt",
+          "type": 6
+        },
+        {
+          "id": "24:2837176602309614582",
+          "name": "repeatInfo",
+          "type": 13
+        },
+        {
+          "id": "25:2665646489480294726",
+          "name": "seriesId",
+          "type": 9
+        }
+      ],
+      "relations": [
+        {
+          "id": "7:1993562298229548652",
+          "name": "subitems",
+          "targetId": "19:348788312227728209"
+        }
+      ]
+    },
+    {
+      "id": "19:348788312227728209",
+      "lastPropertyId": "10:4606368724225048127",
+      "name": "ObjectBoxJobSubItemEvent",
+      "properties": [
+        {
+          "id": "1:4960719009298043843",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:3789384569333886927",
+          "name": "itemId",
+          "indexId": "24:6239120999437622769",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "8:2698429868970871684",
+          "name": "dataId",
+          "indexId": "25:8561527855712417077",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "ObjectBoxJobSubItemEventData"
+        },
+        {
+          "id": "9:2889722361189624952",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "10:4606368724225048127",
+          "name": "dbCreatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "20:4613221252927352546",
+      "lastPropertyId": "5:4722965504973284048",
+      "name": "ObjectBoxJobSubItemEventData",
+      "properties": [
+        {
+          "id": "1:8106149152780988897",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7032953850857514544",
+          "name": "itemId",
+          "indexId": "26:6757912960555592828",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:6531478556355803333",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "4:8111300132946590787",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "5:4722965504973284048",
+          "name": "status",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "21:6300558985841427873",
+      "lastPropertyId": "7:3145343961134440359",
+      "name": "ObjectBoxBalanceItemEvent",
+      "properties": [
+        {
+          "id": "1:3616627062585178094",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:6509598829777479338",
+          "name": "itemId",
+          "indexId": "27:7540354075629433699",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:2423453571365213895",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "5:2429331434212229685",
+          "name": "value",
+          "type": 6
+        },
+        {
+          "id": "6:1382941267472255459",
+          "name": "status",
+          "type": 6
+        },
+        {
+          "id": "7:3145343961134440359",
+          "name": "dbCreatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "23:2066589198760810190",
+      "lastPropertyId": "7:3663741250935172603",
+      "name": "ObjectboxBalanceItemProjectionLocal",
+      "properties": [
+        {
+          "id": "1:1511083080813646125",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8651767649464412160",
+          "name": "itemId",
+          "indexId": "29:8712206879737814423",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:6202261036306355846",
+          "name": "balance",
+          "type": 6
+        },
+        {
+          "id": "6:3060519514554854961",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "7:3663741250935172603",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "24:3899786411755250454",
+      "lastPropertyId": "7:8670200513402118557",
+      "name": "ObjectboxBalanceItemProjectionRemote",
+      "properties": [
+        {
+          "id": "1:7981009390773054949",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:6971460978966785901",
+          "name": "itemId",
+          "indexId": "30:2668315130181707569",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:8651701251503628125",
+          "name": "balance",
+          "type": 6
+        },
+        {
+          "id": "6:4932758795746548537",
+          "name": "dbCreatedAt",
+          "type": 6
+        },
+        {
+          "id": "7:8670200513402118557",
+          "name": "dbUpdatedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "25:5562214472168897935",
+      "lastPropertyId": "7:2699573216103256212",
+      "name": "ObjectBoxJobRepeatInfo",
+      "properties": [
+        {
+          "id": "1:1262248867551988412",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8303435274668373610",
+          "name": "itemId",
+          "indexId": "32:9069419974725290758",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:2540754612601764411",
+          "name": "interval",
+          "type": 6
+        },
+        {
+          "id": "4:3510270974485887894",
+          "name": "weekdays",
+          "type": 27
+        },
+        {
+          "id": "5:2442177566096509159",
+          "name": "dayOfMonth",
+          "type": 6
+        },
+        {
+          "id": "6:7088574936461202378",
+          "name": "month",
+          "type": 6
+        },
+        {
+          "id": "7:2699573216103256212",
+          "name": "frequency",
+          "type": 6
+        }
+      ],
+      "relations": []
+    }
+  ],
+  "lastEntityId": "25:5562214472168897935",
+  "lastIndexId": "33:1861045201820680624",
+  "lastRelationId": "7:1993562298229548652",
+  "lastSequenceId": "0:0",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [
+    4047477764449902539,
+    2133227176372681242,
+    3290492096375964400,
+    8083210009429707469
+  ],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [
+    6822652293872354154,
+    6302305678198549851,
+    3961947975310346998,
+    3911173186996589725,
+    3107015812664484124,
+    5022671326183971967,
+    7571086889474501167,
+    3259817649650022167,
+    8853574873020254580,
+    2535409294178874382,
+    5918162651135361311,
+    2718440916221737744,
+    4060915027021032579,
+    2389584821361542502,
+    7157280217663516447,
+    8795230619737310746,
+    5184258679334625556,
+    3917555438256610055,
+    5200684673276062225,
+    8938350639991472267,
+    4481955190536630173,
+    4796091814225607798,
+    3138330021234660401,
+    7365276869669100375,
+    7639170683486284252,
+    7996700581274109246,
+    3182411038739666000,
+    1590286916646484849,
+    1418023989342076171,
+    2359350017903225904,
+    3785949494474656489,
+    1748973189967812481,
+    6532944688035410709,
+    8517062240547167812,
+    3117402795133937869,
+    9004048747824420663,
+    1196642294906446526,
+    5430701708270079114,
+    3777761240936174864,
+    4275881306090896383,
+    1425121996869402291,
+    935410877271321660,
+    1394520061092549706,
+    709061787971956785,
+    652102971055536773,
+    4541107090136687463,
+    3677565583700332157,
+    4047723807369052575,
+    4486388742329807266,
+    5894597382482880874,
+    7355942585251203855,
+    5937096491918929807,
+    148525156741125695,
+    578518685667855347,
+    3798165359165705535,
+    5408698501683905349,
+    4190638174133269883,
+    158024814142116915,
+    1435553456890608236,
+    8697367758135698390,
+    4823089914322625262,
+    548044102109428682,
+    8725229454741446819,
+    1147347175151972884,
+    2758701297496831807,
+    3828144371757581090,
+    8367915895715269500,
+    2560374784115839035,
+    6761503064105847660,
+    5318279162598153618,
+    295677277279174822,
+    823428518917790166,
+    8735474981901501753,
+    1373395522593678493,
+    7677369033659590696,
+    5306451712749217583,
+    8162050185198891023
+  ],
+  "retiredRelationUids": [
+    2197481359512204679,
+    6782544470465544131,
+    582599187137157289
+  ],
+  "version": 1
+}
