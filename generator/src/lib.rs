@@ -171,16 +171,33 @@ impl EntityVecHelper for Vec<ModelEntity> {
     fn assign_id_to_entities(&mut self) -> &mut Self {
         // TODO harmonize values from existing objectbox-model.json (figure out exact requirements first)
         // fill in the missing id:uids
+        // First pass: find the highest pre-assigned entity ID to avoid collisions
         let mut counter: u64 = 0;
+        for e in self.iter() {
+            if !e.id.is_empty() && e.id != "0:0" {
+                if let Some(id_part) = e.id.split(':').next() {
+                    if let Ok(id) = id_part.parse::<u64>() {
+                        if id > counter {
+                            counter = id;
+                        }
+                    }
+                }
+            }
+        }
+        // Second pass: assign IDs (counter never decreases)
         for e in self.iter_mut() {
             let id = parse_colon_separated_integers(&e.id, counter);
-            counter = id.0;
+            if id.0 > counter {
+                counter = id.0;
+            }
             e.id = format!("{}:{}", id.0, id.1);
 
             let mut counter_p: u64 = 0;
             for v in e.properties.iter_mut() {
                 let id = parse_colon_separated_integers(&v.id, counter_p);
-                counter_p = id.0;
+                if id.0 > counter_p {
+                    counter_p = id.0;
+                }
                 v.id = format!("{}:{}", id.0, id.1);
             }
 
@@ -279,7 +296,7 @@ pub fn generate_assets(out_path: &PathBuf, target_dir: &PathBuf) {
 
     if model_has_changed {
         // write to the same file and replace all contents
-        
+
         // json_dest_path.set_extension("json.new");
         // ob_dest_path.set_extension("rs.new");
     } else {

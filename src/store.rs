@@ -10,7 +10,6 @@ use crate::error::{self, Error};
 
 use crate::opt::Opt;
 use crate::traits::{EntityFactoryExt, OBBlanket};
-use crate::util::ToCChar;
 
 // Caveat: copy and drop are mutually exclusive
 
@@ -57,48 +56,48 @@ impl Store {
     }
 
     pub fn is_open(path: &Path) -> bool {
-        unsafe { obx_store_is_open(path.as_c_char_ptr()) }
+        let c_str = CString::new(path.to_str().unwrap_or("")).unwrap();
+        unsafe { obx_store_is_open(c_str.as_ptr()) }
     }
 
-    pub fn attach(path: &Path) -> error::Result<Self> {
-        let obx_store = c::new_mut(unsafe { obx_store_attach(path.as_c_char_ptr()) })?;
+    /// Attach to an already-open store at the given path.
+    /// Use this for concurrent access when another process (e.g. Flutter) already has the store open.
+    pub fn attach(path: &Path, map: AnyMap) -> error::Result<Self> {
+        let c_str = CString::new(path.to_str().unwrap_or(""))
+            .map_err(|e| Error::new_local(&format!("Invalid path: {}", e)))?;
+        let obx_store = c::new_mut(unsafe { obx_store_attach(c_str.as_ptr()) })?;
         Ok(Store {
             obx_store,
-            trait_map: AnyMap::new(),
+            trait_map: map,
         })
     }
-    // TODO support later
-    /*
-    pub fn from_path_attach(path: &Path) -> Self {
-        Store {
-            obx_store: unsafe { obx_store_attach(path.to_c_char()) },
-            error: None,
-            trait_map: None,
-        }
+
+    /// Attach to an existing store by its store ID.
+    /// Useful for sharing a store across threads within the same process.
+    pub fn attach_by_id(store_id: u64, map: AnyMap) -> error::Result<Self> {
+        let obx_store = c::new_mut(unsafe { obx_store_attach_id(store_id) })?;
+        Ok(Store {
+            obx_store,
+            trait_map: map,
+        })
     }
 
-    pub fn from_store_id_attach(store_id: u64) -> Self {
-        Store {
-            obx_store: unsafe { obx_store_attach_id(store_id) },
-            error: None,
-            trait_map: None,
-        }
-    }
-
-    pub fn attach_or_open(
-        opt: *mut OBX_store_options,
-        check_matching_options: bool,
-        out_attached: *mut bool,
-    ) -> Self {
-        Store {
-            obx_store: unsafe {
-                obx_store_attach_or_open(opt, check_matching_options, out_attached)
+    /// Try to attach to an existing store first; if none is open, open a new one.
+    /// Returns the store and a flag indicating whether it was attached (true) or newly opened (false).
+    pub fn attach_or_open(mut opt: Opt, map: AnyMap) -> error::Result<(Self, bool)> {
+        let mut out_attached = false;
+        let obx_store = c::new_mut(unsafe {
+            obx_store_attach_or_open(opt.obx_opt, false, &mut out_attached)
+        })?;
+        opt.ptr_consumed = !obx_store.is_null();
+        Ok((
+            Store {
+                obx_store,
+                trait_map: map,
             },
-            error: None,
-            trait_map: None,
-        }
+            out_attached,
+        ))
     }
-    */
 
     // TODO Determine if this is safe
     pub fn id(&self) -> u64 {

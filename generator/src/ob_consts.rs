@@ -85,6 +85,7 @@ pub const OBXPropertyType_Relation: OBXPropertyType = 11;
 pub const OBXPropertyType_DateNano: OBXPropertyType = 12;
 pub const OBXPropertyType_Flex: OBXPropertyType = 13;
 pub const OBXPropertyType_ByteVector: OBXPropertyType = 23;
+pub const OBXPropertyType_IntVector: OBXPropertyType = 27;
 pub const OBXPropertyType_StringVector: OBXPropertyType = 30;
 pub const OBXEntityFlags_SYNC_ENABLED: OBXEntityFlags = 2;
 pub const OBXEntityFlags_SHARED_GLOBAL_IDS: OBXEntityFlags = 4;

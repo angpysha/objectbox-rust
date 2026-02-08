@@ -26,6 +26,11 @@
 - [x] Приклади: `Order` з `customer: ToOne<Customer>`, `Student` з `teachers: ToMany<Teacher>`
 - [x] Успішна компіляція та запуск example project
 
+**Баг-фікси (2026-02-08)**:
+- [x] **ToOne index_id overwrite fix**: макрос більше не перезаписує вручну вказаний `#[index(id=X, uid=Y)]` значенням `"0:0"` — тепер лише якщо `index_id.is_none()`
+- [x] **ToMany relation id transfer**: макрос тепер передає `id`/`uid` з `#[property(id=X, uid=Y)]` у `Relation` struct для ToMany полів — раніше relation id завжди був `"0:0"`
+- [x] **lastRelationId fix**: `from_entities()` тепер використовує `max_by_key` замість `.last()` для знаходження найбільшого relation ID
+
 ### 2. Option<T> Support - Завершити тестування ✅ DONE
 **Статус**: Реалізація та тестування завершені (2026-02-06)  
 **Файли**: `example/tests/optional_fields.rs`, `example/src/entities.rs`, `generator/src/code_gen.rs`
@@ -116,14 +121,20 @@
 - [ ] Реалізувати iterator trait для результатів
 - [ ] Додати тести для query operations
 
-### 7. Type Support - Розширення
-**Файли**: `generator/src/model_json.rs:384-557`, `macros/src/property.rs:170`
+### 7. Type Support - Розширення ⚠️ PARTIAL
+**Файли**: `generator/src/model_json.rs`, `generator/src/code_gen.rs`, `generator/src/ob_consts.rs`, `macros/src/property.rs`
 
-**Завдання**:
-- [ ] Додати підтримку інших типів у `as_struct_property_default()` (рядок 384)
-- [ ] Додати підтримку інших типів у `encode_to_fb()` (рядок 444)
-- [ ] Додати підтримку інших типів у `encode_flatten()` (рядок 472)
-- [ ] Додати підтримку інших типів у `as_assigned_property()` (рядок 557)
+**Виконано (2026-02-08)**:
+- [x] **IntVector (type 27)**: `Vec<i32>` → повна підтримка (serialize/deserialize/default/query blanket)
+- [x] **Flex (type 13)**: `Vec<u8>` з `#[property(type = "flex")]` → повна підтримка
+- [x] `OBXPropertyType_IntVector = 27` додано в `ob_consts.rs`
+- [x] Маппінг `"Veci32"` → IntVector в `type_str_to_obx_type()`
+- [x] Маппінг `type = "flex"` у string type parsing
+
+**Залишилось**:
+- [ ] Додати підтримку `Vec<i16>` → ShortVector (type 26)
+- [ ] Додати підтримку `Vec<i64>` → LongVector (type 28)
+- [ ] Додати підтримку `Vec<f32>` → FloatVector (type 29)
 - [ ] Дискусія: підтримка `Option<Primitive>` для всіх примітивних типів
 
 ### 8. Query Membership Operations
@@ -201,6 +212,14 @@
   - `#[unique(id = X, uid = Y)]` — аналогічно для unique indexes
   - `assign_id_to_indexables` тепер використовує `parse_colon_separated_integers` (як entity/property IDs)
   - Виправлено `lastIndexId` — тепер шукає максимальний indexId серед ВСІХ entities
+- [x] Додати DateTime конвертацію (4 Dart-сумісні типи) ✅ DONE (2026-02-07)
+  - `DateTime` — UTC, мілісекундна точність (OBXPropertyType_Date = 10), як Dart `PropertyType.dateUtc`
+  - `DateTimeNano` — UTC, наносекундна точність (OBXPropertyType_DateNano = 12), як Dart `PropertyType.dateNanoUtc`
+  - `#[property(type = "date")]` / `#[property(type = "dateNano")]` — raw i64 з явною анотацією типу
+  - Підтримка `Option<DateTime>` та `Option<DateTimeNano>` для nullable полів
+  - Тести: `example/tests/datetime_tests.rs` (6 тестів: put/get, now, zero/default, raw i64, put_many, conversions)
+  - Виправлено баг дублювання entity ID при `assign_id_to_entities` (counter тепер не зменшується)
+  - Виправлено `lastEntityId` — тепер знаходить максимальний ID серед ВСІХ entities
 - [ ] Додати перевірку конфліктів атрибутів (`macros/src/entity.rs:9`)
 - [ ] Перевірити як працюють generics з entity macro (рядок 7)
 
@@ -208,8 +227,10 @@
 
 **Файл**: `generator/src/model_json.rs:71-78`
 
-**Завдання**:
-- [ ] Імплементувати `lastRelationId` tracking
+**Виконано (2026-02-08)**:
+- [x] Імплементувати `lastRelationId` tracking (використовує `max_by_key` замість `.last()`)
+
+**Залишилось**:
 - [ ] Імплементувати `lastSequenceId` tracking
 - [ ] Підтримка `retiredEntityUids` array
 - [ ] Підтримка `retiredIndexUids` array
@@ -233,19 +254,21 @@
 
 1. ✅ Завершити тестування Option<T> (#2) - DONE
 2. ✅ Виправити String Query баги (#3) - DONE
-3. ✅ Реалізувати Relations (#1) - DONE
-4. **Наступне** → DateTime support (#8), Async operations (#4), ID collision (#5)
-5. **Наостанок** → Покращення, рефакторинг, тех борг
+3. ✅ Реалізувати Relations (#1) - DONE (+ bug fixes for ToOne/ToMany macros, lastRelationId)
+4. ✅ IntVector (type 27) та Flex (type 13) підтримка (#7/#19) - DONE (2026-02-08)
+5. **Наступне** → Remaining typed vectors (ShortVector, FloatVector), Async operations (#4), ID collision (#5)
+6. **Наостанок** → Покращення, рефакторинг, тех борг
 
 ### Оцінка складності:
 
-- ✅ **Relations**: DONE (2026-02-06)
+- ✅ **Relations**: DONE (2026-02-06, bug fixes 2026-02-08)
 - ✅ **Option<T> Tests**: DONE (2026-02-06)
 - ✅ **String Query Fixes**: DONE (2026-02-06)
+- ✅ **IntVector + Flex**: DONE (2026-02-08)
 - 🟠 **Async Operations**: 3-4 дні
 - 🟠 **ID Collision**: 1-2 дні
 - 🟡 **Query Builder**: 3-4 дні
-- 🟡 **Type Support**: 2-3 дні
+- 🟡 **Type Support (remaining)**: 2-3 дні (ShortVector, LongVector, FloatVector)
 - 🟢 **Refactoring**: ongoing
 
 ---
@@ -397,27 +420,28 @@ class Customer {
 **Статус**: ⚠️ Частково реалізовано  
 **Пріоритет**: 🟡 СЕРЕДНІЙ
 
-**Відсутні типи в Rust**:
+**Типи в Rust**:
 
 | Тип | Dart | Rust | Важливість |
 |-----|------|------|------------|
-| `DateTime` | ✅ 4 варіанти (date, dateNano, dateUtc, dateNanoUtc) | ❌ | 🔴 Критично |
-| `List<int>` vectors | ✅ (byteVector, shortVector, intVector, charVector) | ⚠️ Частково | 🟠 Високо |
-| `List<double>` | ✅ floatVector | ❌ | 🟠 Високо |
+| `DateTime` | ✅ 4 варіанти (date, dateNano, dateUtc, dateNanoUtc) | ✅ DateTime/DateTimeNano + raw i64 | ✅ |
+| `List<int>` intVector | ✅ intVector (type 27) | ✅ `Vec<i32>` (2026-02-08) | ✅ |
+| `List<int>` shortVector | ✅ shortVector (type 26) | ❌ | 🟠 Високо |
+| `List<int>` byteVector | ✅ byteVector (type 23) | ✅ `Vec<u8>` | ✅ |
+| `List<double>` | ✅ floatVector (type 29) | ❌ | 🟠 Високо |
 | `List<String>` | ✅ stringVector | ✅ | ✅ |
-| `Uint8List` / typed arrays | ✅ Ефективні типізовані масиви | ❌ | 🟠 Високо |
-| Flex (dynamic JSON-like) | ✅ FlexBuffer | ❌ | 🟡 Середньо |
+| Flex (dynamic JSON-like) | ✅ FlexBuffer (type 13) | ✅ `Vec<u8>` + `type = "flex"` (2026-02-08) | ✅ |
 | UUID | ✅ (uuid, uuidV4, uuidString) | ❌ | 🟡 Середньо |
 | MongoDB types | ✅ (ObjectId, BSON, etc.) | ❌ | 🟢 Низько |
 
-**Завдання**:
-- [ ] Додати підтримку `DateTime` / `chrono::DateTime`
-- [ ] Реалізувати typed vector properties (`Vec<u8>`, `Vec<i16>`, `Vec<f32>`)
-- [ ] Додати FlexBuffer підтримку для dynamic types
+**Залишилось**:
+- [ ] Реалізувати `Vec<i16>` → ShortVector (type 26)
+- [ ] Реалізувати `Vec<i64>` → LongVector (type 28)
+- [ ] Реалізувати `Vec<f32>` → FloatVector (type 29)
 - [ ] UUID type з `uuid` crate
 - [ ] External types annotation
 
-**Оцінка складності**: 5-6 днів
+**Оцінка складності**: 3-4 дні (залишок)
 
 ---
 
@@ -579,9 +603,9 @@ class Document {
 | Transactions | ✅ | ✅ | - |
 | **Data Types** |
 | Nullable fields | ✅ | ✅ (new!) | ✅ |
-| DateTime | ✅ 4 types | ❌ | 🔴 Critical |
-| Typed vectors | ✅ | ⚠️ Partial | 🟠 High |
-| FlexBuffers | ✅ | ❌ | 🟡 Medium |
+| DateTime | ✅ 4 types | ✅ DateTime/DateTimeNano + raw i64 | ✅ |
+| Typed vectors | ✅ | ⚠️ Partial (IntVector ✅, Short/Float ❌) | 🟡 Medium |
+| FlexBuffers | ✅ | ✅ `type = "flex"` | ✅ |
 | UUID | ✅ | ❌ | 🟡 Medium |
 | **Developer Experience** |
 | Property name mapping | ✅ @ExternalName | ✅ #[property(name = "...")] | ✅ |
@@ -602,10 +626,11 @@ class Document {
 
 ### Фаза 1: Foundation (4-6 тижнів)
 1. ✅ **Option<T>** - тестування DONE (2026-02-06)
-2. ✅ **Relations** (ToOne/ToMany) - DONE (2026-02-06)
+2. ✅ **Relations** (ToOne/ToMany) - DONE (2026-02-06, macro bug fixes 2026-02-08)
 3. ✅ **String Query fixes** - DONE (2026-02-06)
-4. 🔴 **DateTime support** - 2-3 дні
-5. 🟠 **Typed vectors** (Vec<f32>, Vec<i16>) - 3-4 дні
+4. ✅ **DateTime support** - DONE (2026-02-07)
+5. ✅ **IntVector (type 27) + Flex (type 13)** - DONE (2026-02-08)
+6. 🟠 **Remaining typed vectors** (Vec<i16>, Vec<f32>) - 2-3 дні
 
 ### Фаза 2: Advanced Features (3-4 тижні)
 6. 🔴 **Vector Search (HNSW)** - 7-10 днів ⭐ **Killer feature**
@@ -676,4 +701,4 @@ class Document {
 ---
 
 *Документ оновлено з урахуванням аналізу ObjectBox Dart реалізації.*  
-*Останнє оновлення: 2026-02-07 (Index id/uid params #13, Property name mapping #13/#23, Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*
+*Останнє оновлення: 2026-02-08 (IntVector type 27 + Flex type 13 підтримка #7/#19, Relations macro bug fixes: ToOne index_id preservation, ToMany relation id transfer, lastRelationId max fix #1/#14, DateTime conversion #13, Index id/uid params #13, Property name mapping #13/#23, Dart-compatible flags #20, id/uid macro params #13, Relations #1, Option<T> Tests #2, String Query Fixes #3 marked as DONE)*

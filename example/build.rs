@@ -24,6 +24,9 @@ fn main() {
     // Tell cargo to tell rustc to link the objectbox shared library.
     println!("cargo:rustc-link-lib=dylib=objectbox");
     
+    // Set rpath so the dynamic linker finds the library at runtime (tests, binaries)
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_path);
+    
     // For macOS, set DYLD_FALLBACK_LIBRARY_PATH for build scripts
     #[cfg(target_os = "macos")]
     {

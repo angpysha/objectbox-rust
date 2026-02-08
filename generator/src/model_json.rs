@@ -41,8 +41,16 @@ impl ModelInfo {
     pub(crate) fn from_entities(slices: &[ModelEntity]) -> Self {
         let mut entities = Vec::from(slices);
         entities.sort_by(|a, b| a.name.cmp(&b.name));
-        let last_entity = entities.last().unwrap(); // TODO remove unwrap, unpack result and return proper error
-        let last_entity_id = last_entity.id.as_str();
+        // Find the entity with the highest numeric ID (not just the last alphabetically)
+        let last_entity_id = entities
+            .iter()
+            .max_by_key(|e| {
+                e.id.split(':').next()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0)
+            })
+            .map(|e| e.id.as_str())
+            .unwrap_or("");
 
         // Find the highest index ID across ALL entities (not just the last one)
         let last_index_id = entities
@@ -65,11 +73,15 @@ impl ModelInfo {
                     .unwrap_or_default()
             });
         
-        // Find last relation ID across all entities
+        // Find the highest relation ID across all entities
         let last_relation_id = entities
             .iter()
             .flat_map(|e| e.relations.iter())
-            .last()
+            .max_by_key(|r| {
+                r.id.split(':').next()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0)
+            })
             .map(|r| r.id.clone())
             .unwrap_or_default();
         
@@ -368,8 +380,11 @@ impl ModelProperty {
             ob_consts::OBXPropertyType_StringVector => quote! {
                 $name: Vec::<String>::new()
             },
-            ob_consts::OBXPropertyType_ByteVector => quote! {
+            ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => quote! {
                 $name: Vec::<u8>::new()
+            },
+            ob_consts::OBXPropertyType_IntVector => quote! {
+                $name: Vec::<i32>::new()
             },
             ob_consts::OBXPropertyType_String => quote! {
                 $name: String::from("")
@@ -385,6 +400,23 @@ impl ModelProperty {
             },
             ob_consts::OBXPropertyType_Double => quote! {
                 $name: 0.0
+            },
+            // DateTime types: default to epoch (0)
+            ob_consts::OBXPropertyType_Date => {
+                if self.rust_type == "DateTime" {
+                    let dt_import = &rust::import("objectbox::datetime", "DateTime");
+                    quote! { $name: $dt_import(0) }
+                } else {
+                    quote! { $name: 0 }
+                }
+            },
+            ob_consts::OBXPropertyType_DateNano => {
+                if self.rust_type == "DateTimeNano" {
+                    let dtn_import = &rust::import("objectbox::datetime", "DateTimeNano");
+                    quote! { $name: $dtn_import(0) }
+                } else {
+                    quote! { $name: 0 }
+                }
             },
             // rest of the integer types
             _ => quote! {
@@ -428,9 +460,13 @@ impl ModelProperty {
                     *$name = table.get::<$fuo<$fvec<$fuo<&str>>>>($offset, None)
                         .map(|sv| sv.iter().map(|s| s.to_string()).collect());
                 },
-                ob_consts::OBXPropertyType_ByteVector => quote! {
+                ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => quote! {
                     *$name = table.get::<$fuo<$fvec<u8>>>($offset, None)
                         .map(|bv| bv.bytes().to_vec());
+                },
+                ob_consts::OBXPropertyType_IntVector => quote! {
+                    *$name = table.get::<$fuo<$fvec<i32>>>($offset, None)
+                        .map(|iv| iv.iter().collect());
                 },
                 ob_consts::OBXPropertyType_String => quote! {
                     *$name = table.get::<$fuo<&str>>($offset, None)
@@ -448,6 +484,31 @@ impl ModelProperty {
                 },
                 ob_consts::OBXPropertyType_Double => quote! {
                     *$name = table.get::<f64>($offset, None);
+                },
+                // Optional DateTime: Option<DateTime> or Option<i64>
+                ob_consts::OBXPropertyType_Date => {
+                    if self.rust_type.contains("DateTime") {
+                        let dt_import = &rust::import("objectbox::datetime", "DateTime");
+                        quote! {
+                            *$name = table.get::<i64>($offset, None).map(|v| $dt_import(v));
+                        }
+                    } else {
+                        quote! {
+                            *$name = table.get::<i64>($offset, None);
+                        }
+                    }
+                },
+                ob_consts::OBXPropertyType_DateNano => {
+                    if self.rust_type.contains("DateTimeNano") {
+                        let dtn_import = &rust::import("objectbox::datetime", "DateTimeNano");
+                        quote! {
+                            *$name = table.get::<i64>($offset, None).map(|v| $dtn_import(v));
+                        }
+                    } else {
+                        quote! {
+                            *$name = table.get::<i64>($offset, None);
+                        }
+                    }
                 },
                 // rest of the integer types
                 _ => {
@@ -485,10 +546,16 @@ impl ModelProperty {
                     *$name = sv.iter().map(|s|s.to_string()).collect();
                 }
             },
-            ob_consts::OBXPropertyType_ByteVector => quote! {
+            ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => quote! {
                 let fb_vec_$name = table.get::<$fuo<$fvec<u8>>>($offset, None);
                 if let Some(bv) = fb_vec_$name {
                     *$name = bv.bytes().to_vec();
+                }
+            },
+            ob_consts::OBXPropertyType_IntVector => quote! {
+                let fb_vec_$name = table.get::<$fuo<$fvec<i32>>>($offset, None);
+                if let Some(iv) = fb_vec_$name {
+                    *$name = iv.iter().collect();
                 }
             },
             // TODO research clear the buffer, and read the slice instead
@@ -514,6 +581,31 @@ impl ModelProperty {
             },
             ob_consts::OBXPropertyType_Double => quote! {
                 *$name = table.get::<f64>($offset, Some(0.0)).unwrap();
+            },
+            // DateTime types: read as i64, wrap in DateTime/DateTimeNano if needed
+            ob_consts::OBXPropertyType_Date => {
+                if self.rust_type == "DateTime" {
+                    let dt_import = &rust::import("objectbox::datetime", "DateTime");
+                    quote! {
+                        *$name = $dt_import(table.get::<i64>($offset, Some(0)).unwrap());
+                    }
+                } else {
+                    quote! {
+                        *$name = table.get::<i64>($offset, Some(0)).unwrap();
+                    }
+                }
+            },
+            ob_consts::OBXPropertyType_DateNano => {
+                if self.rust_type == "DateTimeNano" {
+                    let dtn_import = &rust::import("objectbox::datetime", "DateTimeNano");
+                    quote! {
+                        *$name = $dtn_import(table.get::<i64>($offset, Some(0)).unwrap());
+                    }
+                } else {
+                    quote! {
+                        *$name = table.get::<i64>($offset, Some(0)).unwrap();
+                    }
+                }
             },
             // rest of the integer types
             _ => {
@@ -616,6 +708,10 @@ impl ModelProperty {
             ob_consts::OBXPropertyType_Byte => quote! {
                 pub $name: Box<dyn $type_byte<$entity_name>>,
             },
+            // Date/DateNano are i64 under the hood, use I64 blanket for queries
+            ob_consts::OBXPropertyType_Date | ob_consts::OBXPropertyType_DateNano => quote! {
+                pub $name: Box<dyn $type_long<$entity_name>>,
+            },
             _ => quote!(), // TODO refine this for the remaining types, no support for now
         }
     }
@@ -641,7 +737,9 @@ impl ModelProperty {
             | ob_consts::OBXPropertyType_Char
             | ob_consts::OBXPropertyType_Short
             | ob_consts::OBXPropertyType_Bool
-            | ob_consts::OBXPropertyType_Byte => quote! {
+            | ob_consts::OBXPropertyType_Byte
+            | ob_consts::OBXPropertyType_Date
+            | ob_consts::OBXPropertyType_DateNano => quote! {
                 $name: Box::new($ccb_fn::<$entity_name, $entity_id, $(property_id), $(self.type_field)>()),
             },
             _ => quote!(), // TODO refine this for the remaining types, no support for now
@@ -689,7 +787,9 @@ pub(crate) fn prop_type_to_impl_blanket(
                 impl $impl_long<$entity_name> for $cb<$entity_name> {}
             }
         }
-        ob_consts::OBXPropertyType_ByteVector => {
+        ob_consts::OBXPropertyType_ByteVector
+        | ob_consts::OBXPropertyType_Flex
+        | ob_consts::OBXPropertyType_IntVector => {
             quote! {
                 impl $impl_byte_vec<$entity_name> for $cb<$entity_name> {}
             }
@@ -727,6 +827,12 @@ pub(crate) fn prop_type_to_impl_blanket(
         ob_consts::OBXPropertyType_Byte => {
             quote! {
                 impl $impl_byte<$entity_name> for $cb<$entity_name> {}
+            }
+        }
+        // Date/DateNano use I64 (Long) blanket for queries — they're i64 under the hood
+        ob_consts::OBXPropertyType_Date | ob_consts::OBXPropertyType_DateNano => {
+            quote! {
+                impl $impl_long<$entity_name> for $cb<$entity_name> {}
             }
         }
         // ob_consts::OBXPropertyType_StringVector => 2,

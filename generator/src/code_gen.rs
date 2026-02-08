@@ -83,7 +83,7 @@ fn encode_flatten(
                     }
                 }
             }
-            ob_consts::OBXPropertyType_ByteVector => {
+            ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => {
                 quote! {
                     if let Some(ref val) = self.$name {
                         let byte_vec_$offset = builder.create_vector(val.as_slice());
@@ -91,19 +91,11 @@ fn encode_flatten(
                     }
                 }
             }
-            ob_consts::OBXPropertyType_StringVector => {
-                // Use pre-created vector offset from encode_to_fb_unnested
+            ob_consts::OBXPropertyType_IntVector => {
                 quote! {
-                    if let Some(v) = vec_$offset {
-                        builder.push_slot_always($offset, v);
-                    }
-                }
-            }
-            ob_consts::OBXPropertyType_ByteVector => {
-                // Use pre-created byte vector offset from encode_to_fb_unnested
-                quote! {
-                    if let Some(v) = byte_vec_$offset {
-                        builder.push_slot_always($offset, v);
+                    if let Some(ref val) = self.$name {
+                        let int_vec_$offset = builder.create_vector(val.as_slice());
+                        builder.push_slot_always($offset, int_vec_$offset);
                     }
                 }
             }
@@ -146,6 +138,24 @@ fn encode_flatten(
                     }
                 }
             }
+            // Optional Date/DateNano: Option<DateTime> or Option<DateTimeNano> or Option<i64>
+            ob_consts::OBXPropertyType_Date | ob_consts::OBXPropertyType_DateNano => {
+                if prop.rust_type.contains("DateTime") {
+                    // Option<DateTime> or Option<DateTimeNano> — access .0 for the inner i64
+                    quote! {
+                        if let Some(val) = self.$name {
+                            builder.push_slot_always::<i64>($offset, val.0);
+                        }
+                    }
+                } else {
+                    // Option<i64> with #[property(type = "date"/"dateNano")]
+                    quote! {
+                        if let Some(val) = self.$name {
+                            builder.push_slot_always::<i64>($offset, val);
+                        }
+                    }
+                }
+            }
             _ => {
                 let inferred_type_bits = match field_type {
                     ob_consts::OBXPropertyType_Byte => "8",
@@ -183,9 +193,14 @@ fn encode_flatten(
               builder.push_slot_always($offset, vec_$offset);
             }
         }
-        ob_consts::OBXPropertyType_ByteVector => {
+        ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => {
             quote! {
               builder.push_slot_always($offset, byte_vec_$offset);
+            }
+        }
+        ob_consts::OBXPropertyType_IntVector => {
+            quote! {
+              builder.push_slot_always($offset, int_vec_$offset);
             }
         }
         ob_consts::OBXPropertyType_String => {
@@ -212,6 +227,21 @@ fn encode_flatten(
         ob_consts::OBXPropertyType_Double => {
             quote! {
               builder.push_slot::<f64>($offset, self.$name, 0.0);
+            }
+        }
+        // DateTime types: stored as i64 in FlatBuffers.
+        // If rust_type is DateTime/DateTimeNano, access .0 (inner i64).
+        // If rust_type is i64 (raw), use directly.
+        ob_consts::OBXPropertyType_Date | ob_consts::OBXPropertyType_DateNano => {
+            if prop.rust_type == "DateTime" || prop.rust_type == "DateTimeNano" {
+                quote! {
+                    builder.push_slot::<i64>($offset, self.$name.0, 0);
+                }
+            } else {
+                // i64 or Option<i64> with #[property(type = "date"/"dateNano")]
+                quote! {
+                    builder.push_slot::<i64>($offset, self.$name, 0);
+                }
             }
         }
         _ => {
@@ -260,9 +290,16 @@ fn encode_to_fb_unnested(prop: &ModelProperty, offset: usize) -> Tokens<Rust> {
                     });
                 }
             }
-            ob_consts::OBXPropertyType_ByteVector => {
+            ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => {
                 quote! {
                     let byte_vec_$offset = self.$name.as_ref().map(|v| {
+                        builder.create_vector(v.as_slice())
+                    });
+                }
+            }
+            ob_consts::OBXPropertyType_IntVector => {
+                quote! {
+                    let int_vec_$offset = self.$name.as_ref().map(|v| {
                         builder.create_vector(v.as_slice())
                     });
                 }
@@ -288,9 +325,14 @@ fn encode_to_fb_unnested(prop: &ModelProperty, offset: usize) -> Tokens<Rust> {
               let vec_$offset = builder.create_vector(strs_vec_$offset.as_slice());
             }
         }
-        ob_consts::OBXPropertyType_ByteVector => {
+        ob_consts::OBXPropertyType_ByteVector | ob_consts::OBXPropertyType_Flex => {
             quote! {
               let byte_vec_$offset = builder.create_vector(&self.$name.as_slice());
+            }
+        }
+        ob_consts::OBXPropertyType_IntVector => {
+            quote! {
+              let int_vec_$offset = builder.create_vector(&self.$name.as_slice());
             }
         }
         ob_consts::OBXPropertyType_String => {
@@ -349,18 +391,24 @@ impl CodeGenEntityExt for ModelEntity {
         let unnested_props: Vec<Tokens<Rust>> = self
             .properties
             .iter()
-            .enumerate()
-            .map(|(i, p)| encode_to_fb_unnested(p, i * 2 + 4))
+            .map(|p| {
+                let prop_id = p.id.split(':').next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
+                encode_to_fb_unnested(p, prop_id * 2 + 2)
+            })
             .collect();
 
         let mut props_unsorted: Vec<(usize, Tokens<Rust>)> = self
             .properties
             .iter()
-            .enumerate()
-            .map(|(i, p)| {
+            .map(|p| {
+                let prop_id = p.id.split(':').next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
                 (
                     p.to_sorting_priority(),
-                    encode_flatten(p, i * 2 + 4),
+                    encode_flatten(p, prop_id * 2 + 2),
                 )
             })
             .collect();
@@ -404,8 +452,12 @@ impl CodeGenEntityExt for ModelEntity {
         let assigned_props = self
             .properties
             .iter()
-            .enumerate()
-            .map(|p| p.1.as_assigned_property(p.0 * 2 + 4));
+            .map(|p| {
+                let prop_id = p.id.split(':').next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
+                p.as_assigned_property(prop_id * 2 + 2)
+            });
 
         let mut id = String::new();
         for c in self.id.chars() {
@@ -471,8 +523,16 @@ impl CodeGenEntityExt for ModelEntity {
         let name = self.name.as_str();
         let name_lower_case = self.name.to_ascii_lowercase();
 
+        // Normalize types for blanket impl dedup: Date/DateNano use I64Blanket (same as Long),
+        // Flex/IntVector use VecU8Blanket (same as ByteVector)
         let vec_type_field: Vec<ob_consts::OBXPropertyType> =
-            self.properties.iter().map(|p| p.type_field).collect();
+            self.properties.iter().map(|p| match p.type_field {
+                ob_consts::OBXPropertyType_Date | ob_consts::OBXPropertyType_DateNano
+                    => ob_consts::OBXPropertyType_Long,
+                ob_consts::OBXPropertyType_Flex | ob_consts::OBXPropertyType_IntVector
+                    => ob_consts::OBXPropertyType_ByteVector,
+                other => other,
+            }).collect();
         let hash_set =
             HashSet::<ob_consts::OBXPropertyType>::from_iter(vec_type_field.iter().cloned());
         let impls = hash_set
@@ -513,7 +573,12 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
     for e in &model_info.entities {
         let entity_name = &e.name;
         let entity_id = e.id.as_comma_separated_str();
-        let last_property_iduid = e.properties.last().unwrap().id.as_comma_separated_str();
+        // Find property with the highest numeric ID (not just the last in declaration order)
+        let last_property_iduid = e.properties.iter()
+            .max_by_key(|p| p.id.split(':').next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0))
+            .unwrap().id.as_comma_separated_str();
 
         let mut props_unsorted: Vec<(usize, Tokens<Rust>)> = e
             .properties
@@ -549,15 +614,16 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
         tokens.append(quote);
     }
 
-    // get last_index_id
-    let mut last_p_with_index_id: Option<Tokens<Rust>> = None;
-    for e in model_info.entities.as_slice() {
-        for p in e.properties.as_slice() {
-            if let Some(x) = &p.index_id {
-                last_p_with_index_id = Some(x.as_comma_separated_str());
-            }
-        }
-    }
+    // get last_index_id - find the highest numeric index ID across all entities
+    let last_p_with_index_id: Option<Tokens<Rust>> = model_info.entities.iter()
+        .flat_map(|e| e.properties.iter())
+        .filter_map(|p| p.index_id.as_ref())
+        .max_by_key(|idx_str| {
+            idx_str.split(':').next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0)
+        })
+        .map(|x| x.as_comma_separated_str());
 
     let last_index_id: Tokens<Rust> = if last_p_with_index_id.is_some() {
         quote! { .last_index_id($last_p_with_index_id) }
@@ -565,13 +631,15 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
         quote!()
     };
     
-    // get last_relation_id
-    let mut last_relation: Option<Tokens<Rust>> = None;
-    for e in model_info.entities.as_slice() {
-        for r in e.relations.as_slice() {
-            last_relation = Some(r.id.as_comma_separated_str());
-        }
-    }
+    // get last_relation_id - find the highest numeric relation ID across all entities
+    let last_relation: Option<Tokens<Rust>> = model_info.entities.iter()
+        .flat_map(|e| e.relations.iter())
+        .max_by_key(|r| {
+            r.id.split(':').next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0)
+        })
+        .map(|r| r.id.as_comma_separated_str());
     
     let last_relation_id: Tokens<Rust> = if last_relation.is_some() {
         quote! { .last_relation_id($last_relation) }
@@ -579,7 +647,12 @@ fn generate_model_fn(model_info: &ModelInfo) -> Tokens<Rust> {
         quote!()
     };
 
-    let last_entity = model_info.entities.last().unwrap();
+    // Find the entity with the highest numeric ID (not just the last alphabetically)
+    let last_entity = model_info.entities.iter()
+        .max_by_key(|e| e.id.split(':').next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0))
+        .unwrap();
     let last_entity_id = last_entity.id.as_comma_separated_str();
 
     quote! {

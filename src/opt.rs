@@ -1,9 +1,9 @@
 #![allow(dead_code)]
-use std::ffi::{c_uint, CStr};
+use std::ffi::{c_uint, CStr, CString};
 use std::path::Path;
 
 use crate::model::Model;
-use crate::util::{ToCChar, ToCVoid};
+use crate::util::{ToCVoid};
 use crate::{c::*, error};
 
 pub struct Opt {
@@ -46,7 +46,9 @@ impl Opt {
     }
 
     pub fn directory(&self, dir: &Path) -> error::Result<&Self> {
-        call(unsafe { obx_opt_directory(self.obx_opt, dir.as_c_char_ptr()) }).map(|_| self)
+        let c_str = CString::new(dir.to_str().unwrap_or(""))
+            .map_err(|e| error::Error::new_local(&format!("Invalid directory path: {}", e)))?;
+        call(unsafe { obx_opt_directory(self.obx_opt, c_str.as_ptr()) }).map(|_| self)
     }
 
     pub fn max_db_size_in_kb(&self, size_in_kb: u64) -> &Self {
@@ -288,5 +290,9 @@ impl Opt {
 
     pub fn get_debug_flags(&self) -> u32 {
         unsafe { obx_opt_get_debug_flags(self.obx_opt) }
+    }
+
+    pub fn get_obx_options(&self) -> *mut OBX_store_options {
+        self.obx_opt
     }
 }

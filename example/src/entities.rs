@@ -2,6 +2,7 @@ extern crate objectbox;
 
 use objectbox::macros::entity;
 use objectbox::relations::{ToOne, ToMany};
+use objectbox::datetime::{DateTime, DateTimeNano};
 
 #[derive(Debug)]
 #[entity(id = 4, uid = 12469918787009386704)]
@@ -137,4 +138,27 @@ pub struct RenamedFieldsEntity {
     /// Unique with manually specified index id/uid
     #[unique(id = 11, uid = 2230256660868146630)]
     pub unique_code: String,
+}
+
+/// Entity with DateTime fields to test all date type variations
+/// Mirrors Dart's PropertyType.date / dateNano / dateUtc / dateNanoUtc
+#[derive(Debug)]
+#[entity]
+pub struct DateTimeEntity {
+    #[id]
+    pub id: u64,
+    /// UTC DateTime with millisecond precision (like Dart's PropertyType.dateUtc)
+    pub created_at: DateTime,
+    /// UTC DateTime with nanosecond precision (like Dart's PropertyType.dateNanoUtc)
+    pub updated_at: DateTimeNano,
+    /// Optional DateTime
+    pub deleted_at: Option<DateTime>,
+    /// Raw i64 milliseconds with explicit type annotation (manual approach, like Dart's @Transient pattern)
+    #[property(type = "date")]
+    pub raw_timestamp_ms: i64,
+    /// Raw i64 nanoseconds with explicit type annotation
+    #[property(type = "dateNano")]
+    pub raw_timestamp_ns: i64,
+    /// A regular field to ensure mixing with dates works
+    pub label: String,
 }

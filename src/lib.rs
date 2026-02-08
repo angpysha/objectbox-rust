@@ -7,6 +7,7 @@ pub extern crate objectbox_macros as macros;
 
 pub mod r#box;
 pub mod c;
+pub mod datetime;
 pub mod error;
 pub mod model;
 pub mod opt;

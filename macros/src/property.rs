@@ -203,6 +203,7 @@ impl Property {
 
                                         // Parse string-valued parameters:
                                         //   #[property(name = "camelCaseName")]
+                                        //   #[property(type = "date"/"dateNano"/"dateUtc"/"dateNanoUtc")]
                                         //   #[index(type = "hash"/"hash64"/"value")]
                                         //   #[unique(on_conflict = "replace")]
                                         if let Some(key_ident) = mnv.path.get_ident() {
@@ -213,7 +214,28 @@ impl Property {
                                                 }
                                             } else if key == "type" {
                                                 if let syn::Lit::Str(ls) = &mnv.lit {
-                                                    explicit_index_type = Some(ls.value());
+                                                    let type_val = ls.value();
+                                                    if is_index_or_unique_attr {
+                                                        // Index type: hash/hash64/value
+                                                        explicit_index_type = Some(type_val);
+                                                    } else {
+                                                        // Property type override (e.g., date types for i64 fields)
+                                                        match type_val.as_str() {
+                                                            "date" | "dateUtc" => {
+                                                                *obx_property_type = consts::OBXPropertyType_Date;
+                                                            }
+                                                            "dateNano" | "dateNanoUtc" => {
+                                                                *obx_property_type = consts::OBXPropertyType_DateNano;
+                                                            }
+                                                            "flex" => {
+                                                                *obx_property_type = consts::OBXPropertyType_Flex;
+                                                            }
+                                                            other => {
+                                                                // Could be index type on a #[property] with index
+                                                                explicit_index_type = Some(other.to_string());
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             } else if key == "on_conflict" {
                                                 if let syn::Lit::Str(ls) = &mnv.lit {
@@ -275,11 +297,6 @@ impl Property {
             }
 
             // If type was already determined by an attribute (e.g. #[id]),
-            // skip type detection from the Rust type path
-            if *obx_property_type != 0 {
-                return Some(ParsedField::Property(property));
-            }
-
             // Parse the type from the Rust type path
             let idents = get_idents_from_path(&field.ty);
             if idents.is_empty() {
@@ -303,7 +320,10 @@ impl Property {
                 // ToOne relations are automatically indexed
                 *obx_property_flags |= consts::OBXPropertyFlags_INDEXED 
                     | consts::OBXPropertyFlags_INDEX_PARTIAL_SKIP_ZERO;
-                *index_id = Some("0:0".to_owned());
+                // Only auto-create index placeholder if not already specified via #[index(id=X, uid=Y)]
+                if index_id.is_none() {
+                    *index_id = Some("0:0".to_owned());
+                }
                 
                 return Some(ParsedField::Property(property));
             }
@@ -313,7 +333,11 @@ impl Property {
                 let target_entity = idents[1..].iter().map(|i| i.to_string()).collect::<String>();
                 
                 // ToMany creates a standalone relation, not a property
-                let relation = Relation::new(field_name, target_entity);
+                let mut relation = Relation::new(field_name, target_entity);
+                // Transfer manually specified id from #[property(id = X, uid = Y)] if any
+                if id.id != 0 || id.uid != 0 {
+                    relation.id = id::IdUid { id: id.id, uid: id.uid };
+                }
                 return Some(ParsedField::Relation(relation));
             }
             
@@ -325,14 +349,23 @@ impl Property {
                 let inner_type_str = inner_idents.iter().map(|i| i.to_string()).collect::<String>();
                 *rust_type = format!("Option<{}>", inner_type_str);
                 
-                let inner_ident_joined = inner_type_str.as_str();
-                *obx_property_type = Self::type_str_to_obx_type(inner_ident_joined);
-                *obx_property_flags |= Self::type_str_to_unsigned_flag(inner_ident_joined);
+                // If obx_property_type was already set by explicit type = "..." attribute,
+                // skip auto-detection but still set rust_type (already done above) and flags
+                if *obx_property_type == 0 {
+                    let inner_ident_joined = inner_type_str.as_str();
+                    *obx_property_type = Self::type_str_to_obx_type(inner_ident_joined);
+                    *obx_property_flags |= Self::type_str_to_unsigned_flag(inner_ident_joined);
+                }
             } else {
                 let ident_joined = idents.iter().map(|i| i.to_string()).collect::<String>();
                 *rust_type = ident_joined.clone();
-                *obx_property_type = Self::type_str_to_obx_type(&ident_joined);
-                *obx_property_flags |= Self::type_str_to_unsigned_flag(&ident_joined);
+                
+                // If obx_property_type was already set by explicit type = "..." attribute,
+                // skip auto-detection but still set rust_type (already done above) and flags
+                if *obx_property_type == 0 {
+                    *obx_property_type = Self::type_str_to_obx_type(&ident_joined);
+                    *obx_property_flags |= Self::type_str_to_unsigned_flag(&ident_joined);
+                }
             }
 
             return Some(ParsedField::Property(property));
@@ -358,6 +391,10 @@ impl Property {
             "String" => consts::OBXPropertyType_String,
             "VecString" => consts::OBXPropertyType_StringVector,
             "Vecu8" => consts::OBXPropertyType_ByteVector,
+            "Veci32" => consts::OBXPropertyType_IntVector,
+            // DateTime types (analogous to Dart's PropertyType.dateUtc / dateNanoUtc)
+            "DateTime" => consts::OBXPropertyType_Date,
+            "DateTimeNano" => consts::OBXPropertyType_DateNano,
             _ => 0,
         }
     }
